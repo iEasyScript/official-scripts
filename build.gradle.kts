@@ -1,4 +1,5 @@
 plugins {
+    java
     kotlin("jvm") version "2.3.20"
     kotlin("plugin.serialization") version "2.3.20"
 }
@@ -8,6 +9,18 @@ version = "1.0.0"
 
 repositories {
     mavenCentral()
+    // The script API is published as GitHub release assets, not to Maven Central.
+    exclusiveContent {
+        forRepository {
+            ivy {
+                name = "Project X script API"
+                url = uri("https://github.com/iEasyScript/script-api/releases/download")
+                patternLayout { artifact("v[revision]/[artifact]-[revision].[ext]") }
+                metadataSources { artifact() }
+            }
+        }
+        filter { includeGroup("com.projectx") }
+    }
 }
 
 kotlin {
@@ -15,8 +28,10 @@ kotlin {
 }
 
 dependencies {
-    // The Project X script API, published as release assets. Drop the jars in libs/.
-    compileOnly(fileTree("libs") { include("*.jar") })
+    // compileOnly: the engine already has these classes loaded, so they must not be bundled.
+    val projectxApi = providers.gradleProperty("projectxApiVersion").get()
+    compileOnly("com.projectx:projectx-engine-api:$projectxApi")
+    compileOnly("com.projectx:projectx-core:$projectxApi")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")

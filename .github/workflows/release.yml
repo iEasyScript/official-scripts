@@ -29,24 +29,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # The engine API is not on Maven Central, so the compile path comes from
-      # the script-api release. Pinning API_TAG reproduces an older build.
-      - name: Fetch the script API
-        env:
-          GH_TOKEN: ${{ github.token }}
-          API_REPO: iEasyScript/script-api
-          API_TAG: ${{ vars.API_TAG }}
-        run: |
-          set -eu
-          mkdir -p libs
-          if [ -n "${API_TAG:-}" ]; then
-            gh release download "$API_TAG" -R "$API_REPO" --pattern '*.jar' -D libs
-          else
-            gh release download -R "$API_REPO" --pattern '*.jar' -D libs
-          fi
-          ls -la libs/
-          test -n "$(find libs -name '*.jar' -print -quit)"
-
       - name: Resolve version
         id: v
         run: |
