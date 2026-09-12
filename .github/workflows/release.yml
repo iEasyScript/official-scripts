@@ -59,8 +59,12 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "version: $version"
 
+      # The wrapper loses its executable bit when committed from Windows, so set
+      # it here rather than depending on the file mode in the repo.
       - name: Build
-        run: ./gradlew --stacktrace -Pversion=${{ steps.v.outputs.version }} jar
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --stacktrace -Pversion=${{ steps.v.outputs.version }} jar
 
       # The launcher matches an asset by filename prefix, so the jar must carry
       # the repo's channel name.
