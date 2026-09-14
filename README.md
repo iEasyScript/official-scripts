@@ -34,6 +34,27 @@ Two rules matter more than the rest:
 - Never interact without a minimum interval. A loop that interacts and returns is
   re-entered on the next tick.
 
+## Scripts
+
+### GE Flipper
+
+Flips items on the Grand Exchange. It buys one coin above an item's latest
+instant-sell price and sells one coin below its latest instant-buy price, using
+live prices from the [RuneScape Wiki](https://prices.runescape.wiki/rs), and only
+takes flips that still profit after the exchange's 2% sales tax. Start it next to
+a Grand Exchange clerk; it opens the exchange itself.
+
+- It sells before it buys: anything in the backpack at start, and everything a
+  buy offer brings in, is listed for sale before a new buy goes in.
+- Offers that do not finish are aborted and re-priced. Items it bought are never
+  sold below cost until they have been held for the configured time.
+- It tracks the offers it placed and the items it holds in
+  `~/.projectx/script-data/ge-flipper/`, so a restart picks up where it left off.
+  Offers you place yourself are left alone unless you turn on *Take over existing
+  offers*.
+- Settings cover the item list (or automatic picking by volume and price), slots,
+  coins per offer, coins to keep, minimum profit, re-pricing and breaks.
+
 ## Releases
 
 A `v*` tag builds the jar and publishes it as a release asset with its sha256.
