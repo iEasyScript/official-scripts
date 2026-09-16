@@ -55,6 +55,24 @@ a Grand Exchange clerk; it opens the exchange itself.
 - Settings cover the item list (or automatic picking by volume and price), slots,
   coins per offer, coins to keep, minimum profit, re-pricing and breaks.
 
+### AIO Agility
+
+Runs laps of an agility course until you stop it. Start it anywhere on the
+course; with the course left on *Automatic* it picks the one you are at.
+
+| Course | Notes |
+|---|---|
+| Wilderness | It does not watch your health or run from other players. This is the real Wilderness: bring nothing you would mind losing. |
+| Hefin (Prifddinas) | Takes the cathedral window shortcut whenever it is open, and merges with the light creature at the end of each lap. |
+| Anachronia | The full 52-obstacle lap around the island, from the Temple wall by the lodestone. Every section is taken, so it needs the level for the hardest one (85). |
+
+- It works out the next obstacle from where you are standing, so it picks up
+  mid-lap and after a restart.
+- Each obstacle is clicked by its exact tile, so a second object with the same
+  name nearby (like the far end of the Wilderness pipe) is never clicked instead.
+- After a fall it climbs out of any pit and carries on from the nearest obstacle
+  it can reach.
+
 ## Releases
 
 A `v*` tag builds the jar and publishes it as a release asset with its sha256.

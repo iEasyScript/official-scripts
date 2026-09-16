@@ -33,8 +33,8 @@ import java.util.concurrent.ThreadLocalRandom
 
 @ScriptDescription(
     name = "GE Flipper",
-    version = "1.0.0",
-    author = "Project X",
+    version = "1.0.1",
+    author = "Cryptic",
     description = "Flips items on the Grand Exchange: buys just above the latest instant-sell price and sells just below " +
         "the latest instant-buy price, using live prices from the RuneScape Wiki. Start it next to a Grand Exchange clerk.",
 )
