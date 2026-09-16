@@ -36,6 +36,11 @@ Two rules matter more than the rest:
 
 ## Scripts
 
+Every skilling script here captures a Seren spirit when one appears while you
+wear a Grace of the elves, so its reward reaches your bank. Each also shows an
+overlay with its runtime, XP gained and per hour, time to the next level, and
+what it has done (laps, conversions, bones buried and so on).
+
 ### GE Flipper
 
 Flips items on the Grand Exchange. It buys one coin above an item's latest
@@ -72,6 +77,33 @@ course; with the course left on *Automatic* it picks the one you are at.
   name nearby (like the far end of the Wilderness pipe) is never clicked instead.
 - After a fall it climbs out of any pit and carries on from the nearest obstacle
   it can reach.
+
+### AIO Divination
+
+Harvests wisps at any colony, from Pale to Incandescent and the Elder wisps.
+Start it at the colony; it picks up the wisps around you.
+
+- Enriched wisps and springs are taken first, and a normal harvest is dropped
+  as soon as an enriched one appears.
+- A full backpack of memories is converted at the energy rift, using whatever
+  conversion the rift is set to.
+- Chronicle fragments are caught as they fly past, and empowered at the rift
+  once you hold the amount set under *Empower at*. *Only chronicle fragments*
+  waits at the colony for them without harvesting.
+
+### Bank Burier
+
+Buries bones or scatters ashes next to a bank, keeping Powder of burials active
+the whole time. Pick what to use under *Bones or ashes*: every bone and ash
+that can be bought on the Grand Exchange is listed. Start it next to a bank with
+the bones or ashes and some Powder of burials in it.
+
+- It works at any bank booth, bank chest, counter or banker.
+- When the powder wears off it takes one from the bank and scatters it before
+  burying anything else.
+- Anything else in the backpack is deposited first, and bank withdrawals are
+  switched off notes.
+- It stops when the bank runs out of the chosen bones or ashes, or of powder.
 
 ## Releases
 

@@ -5,6 +5,8 @@ import com.projectx.script.EnumConfigItem
 import com.projectx.script.Script
 import com.projectx.script.ScriptCategory
 import com.projectx.script.ScriptDescription
+import com.projectx.script.api.SkillTracker
+import com.projectx.script.api.captureSerenSpirit
 import com.projectx.script.api.findClosestReachableNPC
 import com.projectx.script.api.findClosestReachableObject
 import com.projectx.script.api.isLoggedIn
@@ -13,13 +15,14 @@ import com.projectx.script.api.localPlayer
 import com.projectx.script.api.walkTo
 import com.projectx.script.event.Event
 import com.projectx.script.event.impl.Chat
+import org.projectx.core.game.skill.Skill
 import world.gregs.voidps.type.Tile
 import kotlin.math.abs
 import kotlin.math.max
 
 @ScriptDescription(
     name = "AIO Agility",
-    version = "1.0.0",
+    version = "1.1.0",
     author = "Cryptic",
     description = "Runs laps of an agility course until stopped: Wilderness, Hefin in Prifddinas or Anachronia. " +
         "Start anywhere on the course.",
@@ -43,13 +46,14 @@ class AioAgility : Script(), ConfigurableScript {
         initialValue = CourseChoice.AUTOMATIC,
     )
 
-    private var laps = 0
+    private val tracker = SkillTracker(Skill.AGILITY)
 
     /** The step after the last obstacle taken; obstacles that can be crossed both ways must never be retaken. */
     private var expected: Step? = null
 
     override suspend fun loop() {
         if (!isLoggedIn()) return delay(1800, 600)
+        if (!isPlayerBusy() && captureSerenSpirit()) return tracker.add("Seren spirits")
 
         val here = localPlayer.tile
         val course = courseChoice.value.course
@@ -84,8 +88,8 @@ class AioAgility : Script(), ConfigurableScript {
         if (landed != null && landed != step) {
             expected = course.stepAfter(step)
             if (step == course.steps.last() && landed == course.steps.first()) {
-                laps++
-                println("[AioAgility] ${course.label} lap $laps complete")
+                tracker.add("Laps")
+                println("[AioAgility] ${course.label} lap ${tracker.countOf("Laps")} complete")
             }
         }
         delay(350, 200)
@@ -162,7 +166,9 @@ class AioAgility : Script(), ConfigurableScript {
         }
     }
 
-    override fun onStop() = println("[AioAgility] Stopped after $laps laps")
+    override fun render() = tracker.window("AIO Agility")
+
+    override fun onStop() = println("[AioAgility] Stopped after ${tracker.countOf("Laps")} laps")
 
     private companion object {
         const val UNDERGROUND_Y = 6400
