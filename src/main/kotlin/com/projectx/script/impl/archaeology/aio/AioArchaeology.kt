@@ -1,6 +1,7 @@
 package com.projectx.script.impl.archaeology.aio
 
 import org.projectx.core.game.skill.Skill
+import world.gregs.voidps.cache.Cache
 import world.gregs.voidps.type.Tile
 import com.projectx.game.items.Item
 import com.projectx.game.nxt.entity.location.SceneObject
@@ -27,6 +28,9 @@ import com.projectx.util.formatElapsedTime
 import com.projectx.util.getFormattedXpPerHour
 
 private const val EXCAVATE = "Excavate"
+
+/** A hotspot the account has never dug offers this instead, under the dig site's soil name. */
+private const val UNCOVER = "Uncover"
 private const val SOIL_BOX = "Archaeological soil box"
 private const val COMPLETE_TOME = 49976
 
@@ -323,6 +327,8 @@ object Gather : State<AioArchaeology>() {
                 lastTimeSprite = sprite
                 delay(3500, 5200)
             }
+        } else if (uncoverBuriedHotspot()) {
+            return
         } else if (hotspotTile != Tile.EMPTY) {
             status = "Walking back to the hotspot"
             if (hotspotTile.withinDistance(localPlayer.tile, 10) || walkTo(hotspotTile.randomize(3), true))
@@ -331,6 +337,35 @@ object Gather : State<AioArchaeology>() {
             status = "No '$hotspotName' in range - click one, or pick another in the settings"
         }
         delay(150, 200)
+    }
+
+    /**
+     * Uncovers a hotspot that has never been dug, which is why the named one is not there to find.
+     *
+     * A hotspot the account has not uncovered does not carry its own name or an Excavate option yet. The placed
+     * object is an unnamed shell that a varbit transforms: until it is uncovered it shows as the dig site's soil
+     * - "Aerated sediment", "Ancient gravel" - offering Uncover, and only afterwards as the named debris with
+     * Excavate.
+     *
+     * The shell still lists what it can become, so the wanted hotspot can be told apart from its neighbours by
+     * asking whether any of its transforms is named the one we are after. Failing that any buried spot will do:
+     * uncovering pays a one-off experience reward and reveals a hotspot either way.
+     *
+     * Returns true when it uncovered something, so the pass ends there and the next one looks again.
+     */
+    private suspend fun AioArchaeology.uncoverBuriedHotspot(): Boolean {
+        val wanted = findClosestReachableObject(hotspotSearchRange) { obj ->
+            obj.hasOption(UNCOVER) && obj.defs.transforms?.any { Cache.loc(it)?.name == hotspotName } == true
+        }
+        val buried = wanted
+            ?: findClosestReachableObject(hotspotSearchRange) { it.hasOption(UNCOVER) }
+            ?: return false
+        status = "Uncovering ${buried.name()}"
+        if (!buried.interact(UNCOVER)) return false
+        // The object is replaced by the named hotspot, so waiting on it disappearing is waiting on the uncover.
+        waitThenDelayUntil(1200, 12_000) { !buried.exists && !localPlayer.isAnimating }
+        delay(600, 300)
+        return true
     }
 }
 
