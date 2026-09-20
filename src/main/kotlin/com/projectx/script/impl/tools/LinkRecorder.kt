@@ -1,5 +1,6 @@
 package com.projectx.script.impl.tools
 
+import com.projectx.game.interfaces.IFSlot
 import com.projectx.game.nxt.DoActionOpcode
 import com.projectx.game.nxt.entity.location.SceneObject
 import com.projectx.script.Script
@@ -28,7 +29,7 @@ import java.io.File
  */
 @ScriptDescription(
     name = "Link Recorder",
-    version = "1.0.0",
+    version = "1.1.0",
     author = "Cryptic",
     description = "Records where the ways through the world put you, as web walker link candidates. Run it and play normally.",
 )
@@ -42,10 +43,23 @@ class LinkRecorder : Script() {
         val objectTile: Tile,
         val from: Tile,
         val to: Tile,
+        val steps: List<IFSlot>,
     )
 
-    /** What was clicked and when, waiting to see whether it moves us. */
-    private class Pending(val obj: SceneObject, val option: String, val at: Long)
+    /**
+     * What was clicked, and how far along we are in watching what it does.
+     *
+     * Using something across the room happens in two parts - the walk to it, then the thing itself - and
+     * only the second is a link. So the walk is waited out first: [standing] stays null until we are stood
+     * still at the object, and becomes the tile we were stood on, which is where the link starts.
+     */
+    private class Pending(val obj: SceneObject, val option: String, val at: Long) {
+        var standing: Tile? = null
+        var idleSince: Long = 0
+
+        /** Interface clicks made while using it, in order - the panel of destinations and which was picked. */
+        val steps = mutableListOf<IFSlot>()
+    }
 
     private val recorded = LinkedHashSet<String>()
     private var pending: Pending? = null
@@ -68,6 +82,17 @@ class LinkRecorder : Script() {
 
     override fun onEvent(event: Event) {
         if (event !is ManualDoAction) return
+
+        // A way through is not always a click and a wait. The dig sites map opens a panel and goes nowhere
+        // until a destination is picked, and which one decides where you come out - so the clicks made while
+        // using something are kept with it, in the order they happened.
+        val slot = event.target as? IFSlot
+        if (slot != null) {
+            if (event.opcode !in COMPONENT_OPTIONS) return
+            pending?.let { it.steps += slot; it.idleSince = System.currentTimeMillis() }
+            return
+        }
+
         val index = OBJECT_OPTIONS.indexOf(event.opcode)
         if (index < 0) return
         val obj = event.target as? SceneObject ?: return
@@ -79,40 +104,46 @@ class LinkRecorder : Script() {
 
     override suspend fun loop() {
         val now = localPlayer.tile
-        val settled = now == previous && !localPlayer.isAniMoving
+        val busy = localPlayer.isAniMoving
+        val settled = now == previous && !busy
         previous = now
-
-        if (!settled) {
-            delay(POLL, POLL / 2)
-            return
-        }
-
-        val before = lastStable
-        lastStable = now
-        if (before == null || before == now) {
-            delay(POLL, POLL / 2)
-            return
-        }
 
         val use = pending
         if (use == null) {
             delay(POLL, POLL / 2)
             return
         }
-        if (System.currentTimeMillis() - use.at > ATTRIBUTION_WINDOW) {
-            pending = null
+
+        val standing = use.standing
+        if (standing == null) {
+            // Still getting there. A click can be made from across the room, so this is given room to walk.
+            if (settled && now.withinDistance(use.obj.tile, USED_FROM)) {
+                use.standing = now
+                use.idleSince = System.currentTimeMillis()
+            } else if (System.currentTimeMillis() - use.at > APPROACH_WINDOW) {
+                pending = null
+            }
             delay(POLL, POLL / 2)
             return
         }
 
-        // Clicking something across the room settles us twice: once where the walk to it finishes, and again
-        // where the thing itself puts us. Only the second is a link, and what tells them apart is where we
-        // started - you have to be stood at a scaffold to skip over it, so a move that began far from the
-        // object is the walk there and not the way through. The click is kept for the move that follows.
-        if (before.withinDistance(use.obj.tile, USED_FROM)) {
+        // Stood at it. Whatever it does to us happens now, so the next place we come to rest is the
+        // destination - however near, which matters because a rubble moves you two tiles and a lift moves
+        // you across the world, and both are links.
+        if (settled && now != standing) {
             pending = null
-            record(Candidate(use.obj.id, use.obj.visibleTypeId, use.obj.name(), use.option, use.obj.tile, before, now))
+            record(Candidate(use.obj.id, use.obj.visibleTypeId, use.obj.name(), use.option, use.obj.tile, standing, now, use.steps.toList()))
+            delay(POLL, POLL / 2)
+            return
         }
+
+        // Nothing is happening to us. A lift takes its time, so the wait is patient while the player is
+        // animating or moving and only runs down while they are stood there idle - which is what tells a
+        // way through that is working from one that was never a way through, like a map you just opened.
+        if (busy) use.idleSince = System.currentTimeMillis()
+        // Reading a panel of destinations is done standing still, so a click on one buys more time.
+        val window = if (use.steps.isEmpty()) SETTLE_WINDOW else INTERFACE_WINDOW
+        if (System.currentTimeMillis() - use.idleSince > window) pending = null
         delay(POLL, POLL / 2)
     }
 
@@ -120,7 +151,8 @@ class LinkRecorder : Script() {
         val key = "${c.typeId}|${c.option}|${c.from.x},${c.from.y},${c.from.plane}|${c.to.x},${c.to.y},${c.to.plane}"
         if (!recorded.add(key)) return
         written++
-        println("[LinkRecorder] ${c.name} (${c.option}) ${c.from.x},${c.from.y},${c.from.plane} -> ${c.to.x},${c.to.y},${c.to.plane}")
+        val via = if (c.steps.isEmpty()) "" else " via " + c.steps.joinToString(" then ") { "if(${it.interfaceId},${it.componentId},${it.slotId})" }
+        println("[LinkRecorder] ${c.name} (${c.option}) ${c.from.x},${c.from.y},${c.from.plane} -> ${c.to.x},${c.to.y},${c.to.plane}$via")
         runCatching {
             store().appendText(
                 """{"objectId":${c.objectId},"typeId":${c.typeId},"name":${quote(c.name)},"option":${quote(c.option)},""" +
@@ -170,11 +202,24 @@ class LinkRecorder : Script() {
             DoActionOpcode.OBJECT_4, DoActionOpcode.OBJECT_5, DoActionOpcode.OBJECT_6,
         )
 
+        /** How long to allow for walking to the thing before giving up on the click. */
+        const val APPROACH_WINDOW = 20_000L
+
         /**
-         * How long after a click a move still counts as that click's doing. Long enough to cover walking the
-         * length of a room first, short enough that wandering off afterwards is not mistaken for a traversal.
+         * How long to keep watching once we are stood at it, counted only while the player is idle. A lift
+         * animation does not run this down, because the player is busy for all of it; standing at something
+         * that turned out not to move us does, which is how a click that was never a way through is dropped
+         * instead of being pinned to wherever we wander next.
          */
-        const val ATTRIBUTION_WINDOW = 20_000L
+        const val SETTLE_WINDOW = 3_000L
+
+        /** The same, once an interface has been clicked - picking from a panel is slower than being moved. */
+        const val INTERFACE_WINDOW = 12_000L
+
+        /** The opcodes whose target is an interface component rather than something in the world. */
+        val COMPONENT_OPTIONS = setOf(
+            DoActionOpcode.COMPONENT, DoActionOpcode.COMPONENT_SIXPLUS, DoActionOpcode.SELECT_COMPONENT,
+        )
         const val POLL = 150
 
         /**
