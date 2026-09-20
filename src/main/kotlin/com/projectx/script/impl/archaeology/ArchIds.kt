@@ -113,6 +113,7 @@ internal object ArchIds {
         "amphitheatre" to Tile.of(3737, 3275, 0),
         "mass grave" to Tile.of(3733, 3231, 0),
         "dominion games stadium" to Tile.of(3796, 3213, 0),
+        "oikoi" to Tile.of(3742, 3178, 0),
     )
 
     /** Archaeologist's workbench, in its several forms; all of them carry Restore. */
