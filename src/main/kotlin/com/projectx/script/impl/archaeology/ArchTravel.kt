@@ -179,10 +179,50 @@ internal object ArchTravel {
     const val GUILD_RADIUS = 70
     const val INTERFACE_TIMEOUT = 6_000L
     const val TELEPORT_TIMEOUT = 20_000L
+
+    /**
+     * How long to let a teleport finish arriving after the coordinates have already changed.
+     *
+     * Generous on purpose: overshooting costs a few idle ticks, while undershooting sends the walker off
+     * before the destination scene exists, which is far more expensive to recover from.
+     */
+    const val ARRIVAL_TIMEOUT = 12_000L
     const val WALK_TIMEOUT = 20_000L
     const val TAU = 2 * Math.PI
     const val SWEEP_POINTS = 8
     val SWEEP_RADII = intArrayOf(16, 30, 46)
+}
+
+/**
+ * Waits for a teleport that has already fired to actually finish putting the player down.
+ *
+ * The coordinates change the instant a teleport starts, several ticks before the player is standing still in
+ * the destination scene. Treating that first change as "arrived" is what sent the walker off too early: at
+ * Kharid-et it would plan a route while the fort was still loading in, find none of the scene it needed, and
+ * walk at the outside of the fort instead of round to the entrance.
+ *
+ * So the arrival is waited out in two parts - reaching the tile the site drops you on, then the player going
+ * quiet - rather than by sleeping for a fixed time and hoping. [expected] is the site's known arrival tile,
+ * or null for a teleport with no fixed destination, which just waits for the player to settle.
+ */
+internal suspend fun Script.awaitArrival(expected: Tile?): Boolean {
+    if (expected != null) {
+        delayUntil(ArchTravel.ARRIVAL_TIMEOUT) { localPlayer.tile.withinDistance(expected, SAME_SITE) }
+    }
+
+    // Standing still is not enough on its own: the tile stops changing for a moment mid-teleport too, so the
+    // player also has to have stopped animating before the scene around them can be trusted.
+    var previous: Tile? = null
+    delayUntil(ArchTravel.ARRIVAL_TIMEOUT) {
+        val now = localPlayer.tile
+        val still = previous == now && !localPlayer.isAniMoving
+        previous = now
+        still
+    }
+
+    val settled = !localPlayer.isAniMoving
+    if (!settled) println("[Archaeology] Teleport did not settle in time; continuing from ${localPlayer.tile}")
+    return settled
 }
 
 /**
@@ -221,7 +261,7 @@ internal suspend fun Script.teleportToGuild(): Boolean {
     delayUntil(ArchTravel.TELEPORT_TIMEOUT) {
         ArchTravel.atGuild() || !localPlayer.tile.withinDistance(from, 12)
     }
-    delay(900, 400)
+    awaitArrival(ArchTravel.GUILD_CENTRE)
     return ArchTravel.atGuild()
 }
 
@@ -271,9 +311,15 @@ internal suspend fun Script.fastTravelTo(site: DigSite): Boolean {
         }
     }
     val moved = !localPlayer.tile.withinDistance(from, 20) && !ArchTravel.atGuild()
-    if (!moved) closeDigSitesMap()
-    delay(900, 400)
-    return moved
+    if (!moved) {
+        closeDigSitesMap()
+        return false
+    }
+
+    // The teleport has fired, which is not the same as having arrived. Everything after this plans routes
+    // through the scene the player lands in, so it has to be the real one.
+    awaitArrival(ArchIds.SITE_ARRIVAL[site.mapIndex])
+    return true
 }
 
 private suspend fun Script.openDigSitesMap(): Boolean {
