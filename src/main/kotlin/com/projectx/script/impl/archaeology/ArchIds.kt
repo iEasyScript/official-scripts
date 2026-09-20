@@ -100,9 +100,13 @@ internal object ArchIds {
      * Keyed on the distinctive word in a hotspot's sub-site, which reads "Kharid-et - Carcerem excavation site".
      */
     val SUB_SITE_ENTRY: Map<String, Tile> = mapOf(
+        // The prison block, which is the Carcerem - its name does not say so, and Praesidio remains stands in it.
         "carcerem" to Tile.of(2247, 7608, 0),
-        "barracks" to Tile.of(2447, 7617, 0),
-        "culinarum" to Tile.of(2447, 7617, 0),
+        // Where the prison block's own door comes out, with Castra debris beside it.
+        "barracks" to Tile.of(2442, 7581, 0),
+        // Culinarum and Armarium share a sub-site; this is where Culinarum debris was dug.
+        "culinarum" to Tile.of(2488, 7589, 0),
+        // Not seen directly - the main fortress landing, which the chapel is reached from.
         "chapel" to Tile.of(2447, 7617, 0),
     )
 
