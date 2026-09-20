@@ -85,6 +85,27 @@ internal object ArchIds {
         8 to Tile.of(3428, 3699, 0), // Daemonheim
     )
 
+    /**
+     * Where to head for a sub-site that sits behind a way in, for the web walker to route to.
+     *
+     * Measured rather than read off a map: Kharid-et's fort entrance was taken to each of the destinations it
+     * offers and the landing tile read off. "Main fortress" arrives at 2447,7617 and "Prison block" at
+     * 2247,7608 - and the prison block is the Carcerem, which its name does not say.
+     *
+     * The walker knows that entrance as a link and answers its "Choose destination." itself, so walking to one
+     * of these tiles is the whole of getting inside; the local sweep then finds the hotspot. The exterior site
+     * is deliberately absent - it is already outside, and sending the walker into the fort to reach it would
+     * be worse than not trying.
+     *
+     * Keyed on the distinctive word in a hotspot's sub-site, which reads "Kharid-et - Carcerem excavation site".
+     */
+    val SUB_SITE_ENTRY: Map<String, Tile> = mapOf(
+        "carcerem" to Tile.of(2247, 7608, 0),
+        "barracks" to Tile.of(2447, 7617, 0),
+        "culinarum" to Tile.of(2447, 7617, 0),
+        "chapel" to Tile.of(2447, 7617, 0),
+    )
+
     /** Archaeologist's workbench, in its several forms; all of them carry Restore. */
     val WORKBENCH_OBJECTS = intArrayOf(115421, 125133, 118958)
 

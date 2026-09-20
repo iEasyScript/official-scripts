@@ -281,8 +281,12 @@ internal suspend fun Script.returnToHotspot(hotspot: Hotspot): Boolean {
         val site = ArchData.digSite(hotspot.siteIndex) ?: return false
         if (!fastTravelTo(site)) return false
     }
+
+    // The walker first, and for a hotspot we have already stood at it is all that should be needed: it knows
+    // the ways through the site as links and routes to the remembered tile through them. Walking the obstacles
+    // back by hand is what is left when the walker cannot make it, not the first thing to try.
+    if (walkNear(known) && ArchTravel.findHotspot(hotspot) != null) return true
     if (route.isNotEmpty() && replayRoute(hotspot, route) != null) return true
-    if (!walkNear(known)) return false
     return ArchTravel.findHotspot(hotspot) != null
 }
 

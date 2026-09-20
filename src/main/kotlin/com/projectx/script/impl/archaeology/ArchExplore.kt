@@ -31,6 +31,7 @@ internal data class RouteStep(val objectId: Int, val option: String)
 
 internal suspend fun Script.exploreForHotspot(hotspot: Hotspot): SceneObject? {
     ArchTravel.findHotspot(hotspot)?.let { return it }
+    walkInto(hotspot)?.let { return it }
 
     val used = mutableSetOf<Int>()
     val route = mutableListOf<RouteStep>()
@@ -40,6 +41,33 @@ internal suspend fun Script.exploreForHotspot(hotspot: Hotspot): SceneObject? {
         ArchTravel.remember(found)
     }
     return found
+}
+
+/**
+ * Lets the web walker get us inside, which is how a sub-site behind a way in should be reached.
+ *
+ * The walker holds the site's ways through as links - Kharid-et's fort entrance among them, along with the
+ * answer its "Choose destination." wants - so it can route from wherever a fast travel drops us to a tile
+ * inside the fort in one go. Trying the site's obstacles by hand is the fallback for somewhere the walker has
+ * no link for, not the first thing to reach for: outward from Kharid-et's arrival tile the nearest untried
+ * way on is a staircase 22 tiles west, while the fort entrance is 28 tiles east, so by distance alone the
+ * explorer always set off away from the fort.
+ *
+ * Returns the hotspot when getting inside was enough to bring it into the scene, otherwise null - which
+ * leaves the caller to explore from wherever we now are, already past the entrance.
+ */
+private suspend fun Script.walkInto(hotspot: Hotspot): SceneObject? {
+    val entry = ArchIds.SUB_SITE_ENTRY.entries
+        .firstOrNull { hotspot.subSite.contains(it.key, ignoreCase = true) }
+        ?.value ?: return null
+    if (localPlayer.tile.withinDistance(entry, INSIDE_ALREADY)) return null
+
+    println("[Archaeology] Web walking into ${hotspot.subSite} at ${entry.x},${entry.y}")
+    if (!walkNear(entry)) {
+        println("[Archaeology] The walker could not get to ${entry.x},${entry.y}; exploring from here instead")
+        return null
+    }
+    return ArchTravel.findHotspot(hotspot) ?: sweepForHotspot(hotspot)
 }
 
 /**
@@ -215,6 +243,12 @@ private fun Tile.stepsFrom(other: Tile): Int =
     if (plane != other.plane) Int.MAX_VALUE else maxOf(kotlin.math.abs(x - other.x), kotlin.math.abs(y - other.y))
 
 /** Deep enough for a lift, a passage and a door; shallow enough that a wrong turn ends quickly. */
+/**
+ * Close enough to the sub-site's entry that the walker has nothing left to do - the local sweep covers the
+ * rest. Wide, because the entry tile stands for a whole part of the fort rather than a precise spot.
+ */
+private const val INSIDE_ALREADY = 60
+
 private const val MAX_DEPTH = 4
 private const val EXPLORE_RANGE = 40
 private const val TRAVERSE_TIMEOUT = 14_000L
