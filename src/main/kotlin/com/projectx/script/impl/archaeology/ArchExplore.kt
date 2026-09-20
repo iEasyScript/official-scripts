@@ -3,7 +3,9 @@ package com.projectx.script.impl.archaeology
 import com.projectx.game.nxt.entity.location.SceneObject
 import com.projectx.script.Script
 import com.projectx.script.api.findClosestObject
+import com.projectx.script.api.dialogueOptions
 import com.projectx.script.api.getAllObjectsWithinRange
+import com.projectx.script.api.interfaces
 import com.projectx.script.api.localPlayer
 import com.projectx.webwalker.WebLinks
 import world.gregs.voidps.type.Tile
@@ -57,13 +59,21 @@ private suspend fun Script.descend(
 
     for (obstacle in nearbyTraversals(used)) {
         val option = obstacle.traversalOption() ?: continue
-        used += obstacle.id
 
         val before = localPlayer.tile
+        println("[Archaeology] Trying ${obstacle.name()} ($option) at ${obstacle.tile.x},${obstacle.tile.y}")
         if (!walkNear(obstacle.tile)) continue
         // Where the obstacle was actually used from, which is what a link starts at; `before` is from further back.
         val standing = localPlayer.tile
         if (!obstacle.interact(option)) continue
+
+        // A way in may ask where to go before it takes you anywhere, so that is answered before waiting to move.
+        delayUntil(CHOICE_APPEARS) { interfaces.isOpen(CHOICE_DIALOG) || !localPlayer.tile.withinDistance(standing, MOVED) }
+        chooseDestination(hotspot)
+
+        // Only spent once it was actually used. Marking it before the walk meant one failed approach - the
+        // fort entrance clicked at across a wall - burned that way through for the rest of the exploration.
+        used += obstacle.id
 
         // Going through changes where we are, or at least what is around us; both are worth re-looking at.
         delayUntil(TRAVERSE_TIMEOUT) {
@@ -123,6 +133,8 @@ internal suspend fun Script.replayRoute(hotspot: Hotspot, route: List<RouteStep>
         if (!walkNear(obstacle.tile)) return null
         val standing = localPlayer.tile
         if (!obstacle.interact(step.option)) return null
+        delayUntil(CHOICE_APPEARS) { interfaces.isOpen(CHOICE_DIALOG) || !localPlayer.tile.withinDistance(standing, MOVED) }
+        chooseDestination(hotspot)
         delayUntil(TRAVERSE_TIMEOUT) {
             !localPlayer.tile.withinDistance(before, MOVED) || ArchTravel.findHotspot(hotspot) != null
         }
@@ -131,6 +143,42 @@ internal suspend fun Script.replayRoute(hotspot: Hotspot, route: List<RouteStep>
     }
     return ArchTravel.findHotspot(hotspot) ?: sweepForHotspot(hotspot)
 }
+
+/**
+ * Answers a way in that asks where to go rather than simply putting the player through.
+ *
+ * Kharid-et's fort entrance opens a "Choose destination." list - "1. Main fortress", "2. Prison block" - and
+ * until it is answered the player stays outside, which is what left the explorer walking in circles around a
+ * fort it had already clicked.
+ *
+ * Which answer is right depends on the part of the site the hotspot sits in, and the wording does not always
+ * match the site's own name: the Carcerem is offered as the prison block. So the few that differ are named in
+ * [DESTINATIONS] and anything else takes the first option, which is the way to the bulk of a site.
+ *
+ * A list whose wording is not known yet is logged rather than guessed at silently, so the next run says what
+ * it saw and the mapping can be filled in.
+ */
+private suspend fun Script.chooseDestination(hotspot: Hotspot): Boolean {
+    if (!interfaces.isOpen(CHOICE_DIALOG)) return false
+    // Empty rows still carry their number, so "3." and the like are not real choices.
+    val options = dialogueOptions.filterKeys { it.substringAfter('.').isNotBlank() }
+    if (options.isEmpty()) return false
+
+    val named = DESTINATIONS.entries.firstOrNull { hotspot.subSite.contains(it.key, ignoreCase = true) }?.value
+    val chosen = named?.let { want -> options.keys.firstOrNull { it.contains(want, ignoreCase = true) } }
+        ?: options.keys.first()
+
+    if (named == null || !chosen.contains(named, ignoreCase = true)) {
+        println("[Archaeology] No known destination for ${hotspot.subSite}; taking \"$chosen\" from ${options.keys}")
+    }
+    options[chosen]?.dialogueContinue()
+    delayUntil(CHOICE_TIMEOUT) { !interfaces.isOpen(CHOICE_DIALOG) }
+    delay(900, 400)
+    return !interfaces.isOpen(CHOICE_DIALOG)
+}
+
+/** Parts of a dig site whose entrance offers them under another name. */
+private val DESTINATIONS = mapOf("Carcerem" to "Prison block")
 
 /**
  * Hands a traversal that worked to the web walker, so the next route is planned straight through it instead of
@@ -170,6 +218,11 @@ private fun Tile.stepsFrom(other: Tile): Int =
 private const val MAX_DEPTH = 4
 private const val EXPLORE_RANGE = 40
 private const val TRAVERSE_TIMEOUT = 14_000L
+
+/** The "Choose destination." list some ways in put up instead of moving you. */
+private const val CHOICE_DIALOG = 720
+private const val CHOICE_APPEARS = 3_000L
+private const val CHOICE_TIMEOUT = 8_000L
 private const val MOVED = 4
 
 /** A lift or a door is a step or two of walking; priced so a route still prefers open ground when there is some. */

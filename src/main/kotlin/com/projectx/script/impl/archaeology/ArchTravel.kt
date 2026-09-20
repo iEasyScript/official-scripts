@@ -5,6 +5,7 @@ import com.projectx.game.nxt.entity.location.SceneObject
 import com.projectx.script.Script
 import com.projectx.script.api.equipment
 import com.projectx.script.api.findClosestObject
+import com.projectx.script.api.findClosestObjectToTile
 import com.projectx.script.api.interfaces
 import com.projectx.script.api.inventory
 import com.projectx.script.api.localPlayer
@@ -84,7 +85,6 @@ internal object ArchTravel {
         save()
     }
 
-    /** The hotspot's scenery, if it is in the loaded scene. */
     /**
      * True when this scenery is the hotspot's.
      *
@@ -98,6 +98,15 @@ internal object ArchTravel {
 
     fun findHotspot(hotspot: Hotspot, range: Int = SCENE_RANGE): SceneObject? =
         findClosestObject(range) { obj -> hotspot.isScenery(obj) && obj.hasOption("Excavate") }
+
+    /**
+     * The hotspot's scenery nearest [from] rather than nearest the player.
+     *
+     * A dig site lays the same hotspot out as several patches, so when a time sprite settles on one of them this
+     * is how the dig aims at that patch instead of whichever happens to be underfoot.
+     */
+    fun findHotspotNear(hotspot: Hotspot, from: Tile, range: Int = SCENE_RANGE): SceneObject? =
+        findClosestObjectToTile(from, range) { obj -> hotspot.isScenery(obj) && obj.hasOption("Excavate") }
 
     /**
      * The hotspot while nobody has dug it yet, which is why [findHotspot] cannot see it.
@@ -136,7 +145,9 @@ internal object ArchTravel {
      */
     fun currentSiteIndex(): Int {
         val here = findClosestObject(SCENE_RANGE) { obj -> obj.hasOption("Excavate") } ?: return 0
-        return ArchData.hotspots.firstOrNull { it.objectIds.any { id -> id == here.id } }?.siteIndex ?: 0
+        return ArchData.hotspots
+            .firstOrNull { it.objectIds.any { id -> id == here.visibleTypeId || id == here.id } }
+            ?.siteIndex ?: 0
     }
 
     private fun load(): MutableMap<Int, Tile> {
@@ -180,12 +191,18 @@ internal object ArchTravel {
  */
 internal suspend fun Script.walkNear(tile: Tile): Boolean {
     if (localPlayer.tile.withinDistance(tile, ARRIVED)) return true
-    if (localPlayer.tile.withinDistance(tile, WALKABLE)) {
+
+    // Only a short hop on the same floor is worth a single click. Anything further goes through the web
+    // walker, which paths around walls and through doors, stairs and shortcuts; a click does none of that, so
+    // it used to walk into the side of Kharid-et's fort rather than round to the entrance, time out, and leave
+    // the explorer thinking that entrance could not be reached.
+    if (tile.plane == localPlayer.tile.plane && localPlayer.tile.withinDistance(tile, SHORT_HOP)) {
         walkTo(tile.randomize(2), true)
         delayUntil(ArchTravel.WALK_TIMEOUT) { localPlayer.tile.withinDistance(tile, ARRIVED) }
-    } else {
-        webWalk(tile, arriveDistance = ARRIVED)
+        if (localPlayer.tile.withinDistance(tile, ARRIVED + 2)) return true
     }
+
+    webWalk(tile, arriveDistance = ARRIVED)
     return localPlayer.tile.withinDistance(tile, ARRIVED + 2)
 }
 
@@ -308,4 +325,6 @@ internal suspend fun Script.sweepForHotspot(hotspot: Hotspot): SceneObject? {
 private const val SAME_SITE = 120
 private const val MAP_RANGE = 15
 private const val ARRIVED = 6
-private const val WALKABLE = 60
+
+/** Far enough that one click is still sensible; past this the web walker earns its planning. */
+private const val SHORT_HOP = 12

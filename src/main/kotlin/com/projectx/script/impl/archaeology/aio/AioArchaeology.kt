@@ -52,8 +52,6 @@ private val DEPOSIT_OPTIONS = listOf(DEPOSIT_MATERIALS, STORE, DEPOSIT_ALL, LOAD
 private val Item.isMaterial get() = getDef().category == MATERIAL_CATEGORY
 private val Item.isSoil get() = getDef().category == SOIL_CATEGORY
 
-private val timeSpriteLocation get() = spotAnims.firstOrNull { it.id == 7307 }?.tile
-
 /** What to do with the soil a hotspot yields alongside its materials. */
 enum class SoilHandling(private val label: String) {
     FILL_BOX_THEN_DROP("Fill soil box, drop the rest"),
@@ -82,7 +80,7 @@ private data class ClickedDeposit(val option: String, val tile: Tile, val isNpc:
 
 @ScriptDescription(
     name = "AIO Archaeology",
-    version = "2.0.0",
+    version = "2.1.0",
     author = "Cryptic",
     description = "Excavates any hotspot in the game. Pick a dig site and hotspot in the settings, or click one in game.",
     category = ScriptCategory.ARCHAEOLOGY,
@@ -314,7 +312,7 @@ object Gather : State<AioArchaeology>() {
             return
         }
 
-        val sprite = timeSpriteLocation
+        val sprite = timeSpriteTile(hotspotSearchRange)
         if (localPlayer.isAniMoving && lastTimeSprite == sprite) return
 
         val hotspot = findClosestReachableObjectToTile(sprite ?: localPlayer.tile, hotspotSearchRange) {

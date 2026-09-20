@@ -7,6 +7,9 @@ import com.projectx.script.api.findClosestObject
 import com.projectx.script.api.findSerenSpirit
 import com.projectx.script.api.inventory
 import com.projectx.script.api.localPlayer
+import com.projectx.script.api.timeSpriteElsewhere
+import com.projectx.script.api.timeSpriteTile
+import world.gregs.voidps.type.Tile
 import com.projectx.util.gaussian
 
 /** Why an excavation pass ended, which is what the main loop switches on. */
@@ -42,7 +45,11 @@ internal suspend fun Script.digAt(hotspot: Hotspot): DigResult {
     if (ArchTravel.findHotspot(hotspot) == null && !travelToHotspot(hotspot)) {
         return if (uncoverNearby(hotspot)) DigResult.WORKING else DigResult.UNREACHABLE
     }
-    val target = ArchTravel.findHotspot(hotspot)
+    // A time sprite settles on one patch and is worth far more than carrying on where we are, so when one is up
+    // the dig aims at the hotspot nearest it rather than the one nearest us.
+    val sprite = timeSpriteTile()
+    val target = sprite?.let { ArchTravel.findHotspotNear(hotspot, it) }
+        ?: ArchTravel.findHotspot(hotspot)
         ?: return if (uncoverNearby(hotspot)) DigResult.WORKING else DigResult.UNREACHABLE
 
     if (clearBackpack(hotspot)) return DigResult.WORKING
@@ -52,23 +59,26 @@ internal suspend fun Script.digAt(hotspot: Hotspot): DigResult {
         delay(700, 260)
         return DigResult.WORKING
     }
+    if (sprite != null) println("[Archaeology] Digging ${hotspot.name} on the time sprite at ${sprite.x},${sprite.y}")
     ArchTravel.remember(target)
-    watchDig(hotspot)
+    watchDig(hotspot, target.tile)
     delay(320, 140)
     return DigResult.WORKING
 }
 
 /**
  * Excavation carries on by itself, so this only watches for a reason to stop early: a full backpack, enough
- * soil to be worth boxing, a Seren spirit to catch, or the player going idle because the hotspot depleted.
+ * soil to be worth boxing, a Seren spirit to catch, a time sprite settling on a different patch, or the player
+ * going idle because the hotspot depleted.
  */
-private suspend fun Script.watchDig(hotspot: Hotspot) {
+private suspend fun Script.watchDig(hotspot: Hotspot, digging: Tile) {
     var lastBusy = System.currentTimeMillis()
     delayUntil(DIG_TIMEOUT, pollingDelayMillis = 300) {
         val now = System.currentTimeMillis()
         if (localPlayer.isAnimating || localPlayer.isMoving) lastBusy = now
         inventory.isFull ||
             findSerenSpirit() != null ||
+            timeSpriteElsewhere(digging) ||
             (!DigState.soilBoxFull && inventory.count(hotspot.soilId) >= SOIL_BEFORE_FILLING) ||
             now - lastBusy > gaussian(IDLE_GRACE_MILLIS, 500L)
     }
