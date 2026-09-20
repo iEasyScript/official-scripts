@@ -6,7 +6,6 @@ import com.projectx.script.api.MakeX
 import com.projectx.script.api.continueDialogueContaining
 import com.projectx.script.api.findClosestNPC
 import com.projectx.script.api.findClosestObject
-import com.projectx.script.api.hasActiveMakeXProgress
 import com.projectx.script.api.interfaces
 import com.projectx.script.api.inventory
 import com.projectx.script.api.isDialogOpen
@@ -36,10 +35,10 @@ internal suspend fun Script.restoreArtefacts(): Boolean {
 
     var restoredAny = false
     while (inventory.hasItem(*ArchData.damagedArtefactIds)) {
-        if (hasActiveMakeXProgress) {
-            delayUntil(MAKE_TIMEOUT, pollingDelayMillis = 400) { !hasActiveMakeXProgress || !MakeX.isOpen }
-            continue
-        }
+        // Starting a restoration closes the bench's own panel and leaves only the outer frame behind, so the
+        // panel is put back at the top of every pass rather than only when the whole interface has gone.
+        if (!openWorkbench()) break
+
         // Skipped artefacts are passed over, not re-picked: re-picking the same one is how this loop
         // would spin forever on an artefact the materials will not cover.
         val damaged = inventory.firstOrNull { item ->
@@ -51,6 +50,7 @@ internal suspend fun Script.restoreArtefacts(): Boolean {
             continue
         }
         val category = ArchData.categoryOf(recipe.restoredId)
+        val held = inventory.count(damaged.id)
         val started = makeX({ it.equals(recipe.name, ignoreCase = true) }, { category != null && it == category })
         if (!started) {
             // Not offered: the materials are short, or it is filed somewhere this account cannot see yet.
@@ -58,10 +58,22 @@ internal suspend fun Script.restoreArtefacts(): Boolean {
             delay(500, 200)
             continue
         }
+
+        // A restoration does not report progress the way the make interface usually does. Its counter stays
+        // at zero from start to finish, so a wait built on that returns at once and the next pass clicks the
+        // bench again before the first artefact is done - which cancels it, and the run spends its time
+        // reopening the bench instead of restoring anything.
+        //
+        // What is unambiguously true at the end is that the damaged artefact has left the backpack, so that
+        // is what is waited for.
+        delayUntil(MAKE_TIMEOUT, pollingDelayMillis = 400) { inventory.count(damaged.id) < held }
+        if (inventory.count(damaged.id) >= held) {
+            // It never got going, or could not finish. Passing over it keeps the rest of the backpack moving.
+            skipped += damaged.id
+            continue
+        }
         restoredAny = true
-        delayUntil(MAKE_TIMEOUT, pollingDelayMillis = 400) { !hasActiveMakeXProgress || !MakeX.isOpen }
         delay(600, 250)
-        if (!MakeX.isOpen && !openWorkbench()) break
     }
     skipped.clear()
     closeMakeX()

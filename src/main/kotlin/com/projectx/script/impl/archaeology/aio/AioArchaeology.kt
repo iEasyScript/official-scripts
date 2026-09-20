@@ -80,7 +80,7 @@ private data class ClickedDeposit(val option: String, val tile: Tile, val isNpc:
 
 @ScriptDescription(
     name = "AIO Archaeology",
-    version = "2.3.2",
+    version = "2.3.3",
     author = "Cryptic",
     description = "Excavates any hotspot in the game. Pick a dig site and hotspot in the settings, or click one in game.",
     category = ScriptCategory.ARCHAEOLOGY,
