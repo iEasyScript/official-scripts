@@ -108,6 +108,11 @@ internal object ArchIds {
         "culinarum" to Tile.of(2488, 7589, 0),
         // Not seen directly - the main fortress landing, which the chapel is reached from.
         "chapel" to Tile.of(2447, 7617, 0),
+
+        // Everlight, each one a hotspot that was found in the scene and read off.
+        "amphitheatre" to Tile.of(3737, 3275, 0),
+        "mass grave" to Tile.of(3733, 3231, 0),
+        "dominion games stadium" to Tile.of(3796, 3213, 0),
     )
 
     /** Archaeologist's workbench, in its several forms; all of them carry Restore. */

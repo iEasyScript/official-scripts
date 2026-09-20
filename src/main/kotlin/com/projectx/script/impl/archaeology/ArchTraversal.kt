@@ -39,6 +39,12 @@ object ArchTraversal {
         Traversal(116601, "Statue of Tromple", listOf("Open"), "everlight", false, false),
         Traversal(116604, "Statue of Tromple", listOf("Open"), "everlight", false, false),
         Traversal(116629, "Cliff", listOf("Traverse"), "everlight", false, true),
+        // These four were missing because the table was generated with this file's own option list as the
+        // filter, so an obstacle carrying a verb the list did not have was dropped and then stayed invisible.
+        Traversal(116630, "Scaffold", listOf("Skip over"), "everlight", false, true),
+        Traversal(116632, "Rubble", listOf("Climb over"), "everlight", false, true),
+        Traversal(116633, "Broken doorway", listOf("Jump over"), "everlight", false, true),
+        Traversal(116637, "Rubble", listOf("Skip over"), "everlight", false, true),
         Traversal(116631, "Bridge", listOf("Traverse"), "everlight", false, true),
         Traversal(116634, "Plank", listOf("Traverse"), "everlight", false, true),
         Traversal(116635, "Cliff", listOf("Traverse"), "everlight", false, true),
@@ -152,10 +158,20 @@ object ArchTraversal {
      * before answering hasOption. So the option is the reliable question, and the id table below is only
      * used to tell an agility obstacle from a way back out.
      */
+    /**
+     * The options that mean "this takes you somewhere". An obstacle is only a candidate if it offers one, so
+     * anything missing here is invisible to the explorer however plainly it is a way through - which is how
+     * Everlight's scaffold went unused: it carries "Skip over", and with only the cliff beside it left to
+     * consider the explorer took the cliff, which leads the wrong way.
+     */
     val OPTIONS: List<String> = listOf(
         "Traverse", "Squeeze through", "Squeeze", "Cross", "Jump",
         "Enter", "Go through", "Descend", "Climb down", "Climb-down",
         "Pass", "Open", "Ascend", "Climb up", "Climb-up",
+        // The "<verb> over" family, read off the objects themselves. Matching is exact, so "Jump" does not
+        // cover "Jump over" and each has to be here in full.
+        "Skip over", "Climb over", "Jump over",
+        "Study",
         "Exit", "Leave",
     )
 
