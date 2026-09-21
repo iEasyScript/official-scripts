@@ -170,7 +170,7 @@ internal object ArchIds {
     const val SITE_MAP = 667
     const val SITE_MAP_ICONS = 11
     const val SITE_MAP_CLOSE = 27
-    const val SITE_MAP_FAST_TRAVEL_OP = 2
+    const val SITE_MAP_FAST_TRAVEL_OP = 1
 
     /** The certificate shown at a qualification ceremony; closing it is what finishes the ceremony. */
     const val QUALIFICATION_INTERFACE = 664

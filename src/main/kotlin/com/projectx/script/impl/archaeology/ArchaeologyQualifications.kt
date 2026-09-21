@@ -35,7 +35,7 @@ import org.projectx.core.game.skill.Skill
  */
 @ScriptDescription(
     name = "Archaeology Qualifications",
-    version = "1.1.0",
+    version = "1.1.1",
     author = "Cryptic",
     description = "Works up the Archaeology qualifications: digs, restores, completes collections, keeps " +
         "research running and attends the ceremonies. Resumes from the account's own progress, so " +
