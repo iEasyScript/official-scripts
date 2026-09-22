@@ -39,7 +39,7 @@ import com.projectx.ui.backend.dsl.scopes.xpProgressBar
  */
 @ScriptDescription(
     name = "Portables",
-    version = "1.2.0",
+    version = "1.3.0",
     author = "Cryptic",
     description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - " +
         "restocking from a bank preset. Stand where the station and a bank are both in reach.",
@@ -71,6 +71,16 @@ class Portables : Script(), ConfigurableScript {
     private val tracker = SkillTracker()
 
     private var status = "Starting"
+
+    /**
+     * What the last restock put in the backpack, which is what this run counts as materials.
+     *
+     * Learned rather than configured. The preset is the only thing that knows what is being made, so what
+     * it hands over is taken to be the materials, and they are gone when none of them is left. That is what
+     * lets a finished batch go straight to the bank instead of opening the station to be told so.
+     */
+    private var materials: Set<Int> = emptySet()
+
     private var lastXpGainMillis = 0L
     private var lastXpTotal = 0
     private var lastStationSeenMillis = 0L
@@ -81,6 +91,7 @@ class Portables : Script(), ConfigurableScript {
         lastXpGainMillis = now
         lastStationSeenMillis = now
         lastXpTotal = getXp(station.value.skill)
+        materials = inventory.map { it.id }.toSet()
         println("[Portables] Working a ${station.value} for ${station.value.skill}")
     }
 
@@ -91,9 +102,9 @@ class Portables : Script(), ConfigurableScript {
         noteProgress()
         if (giveUp()) return
 
-        // The window, once open, is the only honest answer to whether there is anything left to make. A
-        // backpack holding what was just made is not an empty one, so its contents cannot be asked - which
-        // is how a run came to finish a batch of potions and go straight back to the well for another.
+        // A window that is up and idle either has something to make or it does not, and its own count says
+        // which. This is the safety net rather than the usual path: a run that knows its materials are gone
+        // never opens one to be told so.
         if (MakeX.isOpen && !MakeX.inProgress) {
             if (MakeX.maxQuantity <= 0) {
                 status = "Out of materials"
@@ -102,16 +113,20 @@ class Portables : Script(), ConfigurableScript {
             }
             status = "Starting the job"
             makeXConfirm()
-            return delay(900, 400)
+            return delay(400, 400)
         }
 
         if (isPlayerBusy() || MakeX.inProgress) {
             status = "Working"
-            return delay(700, 300)
+            return delay(300, 300)
         }
 
-        // A brazier puts up no window to ask, so for that one an empty backpack is the signal.
-        if (bankOpen || inventory.isEmpty) return restock()
+        if (bankOpen) return restock()
+
+        // A batch makes everything it can, so once the materials the preset handed over are gone the job is
+        // finished and the bank is the next stop. Opening the station again to be told nothing can be made
+        // is a wasted trip, and a conspicuous one.
+        if (outOfMaterials()) return restock()
 
         useStation()
     }
@@ -204,6 +219,7 @@ class Portables : Script(), ConfigurableScript {
         // that, a run told to wait for materials would be stopped by the very timer meant to catch a run
         // that is stuck.
         lastXpGainMillis = System.currentTimeMillis()
+        materials = inventory.map { it.id }.toSet()
         tracker.add("Loads")
     }
 
@@ -217,6 +233,19 @@ class Portables : Script(), ConfigurableScript {
         if (!MakeX.isOpen) return
         clickKey(Key.ESCAPE)
         delayUntil(INTERFACE_TIMEOUT) { !MakeX.isOpen }
+    }
+
+    /**
+     * Whether the materials are gone.
+     *
+     * An empty backpack always counts, which is what a brazier leaves behind and the only signal it gives.
+     * Otherwise it is the items the preset handed over that matter: what a job produces lands in the same
+     * backpack, so a full one says nothing about whether there is anything left to work with.
+     */
+    private fun outOfMaterials(): Boolean {
+        if (inventory.isEmpty) return true
+        if (materials.isEmpty()) return false
+        return materials.none { inventory.count(it) > 0 }
     }
 
     /** Keeps the clock honest about when the account last actually gained something. */
