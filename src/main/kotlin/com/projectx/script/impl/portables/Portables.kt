@@ -37,7 +37,7 @@ import com.projectx.ui.backend.dsl.scopes.xpProgressBar
  */
 @ScriptDescription(
     name = "Portables",
-    version = "1.0.0",
+    version = "1.1.0",
     author = "Cryptic",
     description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - " +
         "restocking from a bank preset. Stand where the station and a bank are both in reach.",
@@ -101,10 +101,7 @@ class Portables : Script(), ConfigurableScript {
             return delay(700, 300)
         }
 
-        if (bankOpen || inventory.isEmpty) {
-            restock()
-            return
-        }
+        if (bankOpen || inventory.isEmpty) return restock()
 
         useStation()
     }
@@ -147,28 +144,42 @@ class Portables : Script(), ConfigurableScript {
         delay(600, 250)
     }
 
-    /** Fills the backpack from the bank, or decides there is nothing left to fill it with. */
+    /**
+     * Fills the backpack, or decides there is nothing left to fill it with.
+     *
+     * A bank chest loads the last preset from its own menu, without the bank window ever opening, which is
+     * both quicker and what a player does. Only a numbered preset needs the window, so that is the one case
+     * that opens it.
+     */
     private suspend fun restock() {
-        if (!bankOpen) {
-            val bank = findClosestObject(SEARCH_RANGE) { obj -> BANK_OPTIONS.any { obj.hasOption(it) } }
-            if (bank == null) {
-                status = "No bank in reach"
-                return delay(1500, 500)
-            }
-            status = "Opening the bank"
-            val option = BANK_OPTIONS.first { bank.hasOption(it) }
-            if (!bank.interact(option)) return delay(800, 300)
-            delayUntil(INTERFACE_TIMEOUT) { bankOpen }
-            if (!bankOpen) return
+        val chest = findClosestObject(SEARCH_RANGE) { obj -> BANK_OPTIONS.any { obj.hasOption(it) } }
+        if (chest == null && !bankOpen) {
+            status = "No bank in reach"
+            return delay(1500, 500)
         }
 
-        status = "Loading preset"
-        loadBankPreset(if (preset.value > 0) preset.value else LAST_PRESET)
-        delayUntil(INTERFACE_TIMEOUT) { !bankOpen }
+        val before = inventory.usedSlots
+        if (preset.value == 0 && chest != null && chest.hasOption(LOAD_LAST_PRESET)) {
+            status = "Loading last preset"
+            if (!chest.interact(LOAD_LAST_PRESET)) return delay(800, 300)
+            delayUntil(INTERFACE_TIMEOUT) { inventory.usedSlots != before }
+        } else {
+            if (!bankOpen) {
+                status = "Opening the bank"
+                val option = chest?.let { obj -> BANK_OPTIONS.firstOrNull { obj.hasOption(it) } }
+                    ?: return delay(1200, 400)
+                if (!chest.interact(option)) return delay(800, 300)
+                delayUntil(INTERFACE_TIMEOUT) { bankOpen }
+                if (!bankOpen) return
+            }
+            status = "Loading preset ${preset.value}"
+            loadBankPreset(preset.value)
+            delayUntil(INTERFACE_TIMEOUT) { !bankOpen }
+        }
         delay(700, 300)
 
         if (inventory.isEmpty) {
-            // The preset gave nothing, so the bank has nothing left to give.
+            // Nothing came back, so the bank has nothing left to give.
             if (stopWhenOut.value) {
                 println("[Portables] The preset restocked nothing; stopping")
                 stop()
@@ -244,6 +255,10 @@ class Portables : Script(), ConfigurableScript {
         /** What the game calls loading whichever preset was used last. */
         const val LAST_PRESET = 0
 
-        val BANK_OPTIONS = listOf("Load Last Preset", "Bank", "Use", "Open")
+        /** What a bank chest calls filling the backpack from the preset you last used, in one click. */
+        const val LOAD_LAST_PRESET = "Load Last Preset from"
+
+        /** How to open the bank proper, which only a numbered preset needs. */
+        val BANK_OPTIONS = listOf(LOAD_LAST_PRESET, "Use", "Bank", "Open")
     }
 }

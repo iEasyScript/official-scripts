@@ -9,10 +9,14 @@ import org.projectx.core.game.skill.Skill
  * Each one is several scenery ids rather than one: a portable is placed by a player, and which id it
  * appears as depends on the variant that was dropped. A station is therefore recognised by any of its ids.
  *
- * [options] is a list rather than a name because the left-click option on a portable is configurable - a
- * station set to "Configure" offers different wording than one left alone - so the first option the placed
- * object actually carries is the one used. Anything not listed here is passed over rather than guessed at,
- * which is what stops the script clicking "Remove" on somebody's station.
+ * [options] is a list because a portable offers several jobs and only one of them is this script's: a
+ * crafter also cuts gems and tans leather, a fletcher also strings bows, a brazier also burns bones. The
+ * first listed option the placed object carries is used, and anything not listed is passed over rather than
+ * guessed at - which is what stops a run tanning leather because it could not find what it came for.
+ *
+ * The wording is read off the objects themselves rather than guessed. Matching is exact, so "Mix" does not
+ * find the well's "Mix Potions" and "Add-logs" does not find the brazier's "Add logs" - both of which it
+ * originally did not.
  */
 enum class Portable(
     private val label: String,
@@ -20,12 +24,12 @@ enum class Portable(
     val objectIds: IntArray,
     val options: List<String>,
 ) {
-    WORKBENCH("Workbench", Skill.CONSTRUCTION, intArrayOf(117926), listOf("Build", "Make", "Craft")),
-    FLETCHER("Fletcher", Skill.FLETCHING, intArrayOf(106599, 106598), listOf("Fletch", "Make", "Craft")),
-    RANGE("Range", Skill.COOKING, intArrayOf(89768), listOf("Cook", "Cook-at", "Make")),
-    WELL("Well", Skill.HERBLORE, intArrayOf(89770), listOf("Make", "Mix", "Brew", "Craft")),
-    CRAFTER("Crafter", Skill.CRAFTING, intArrayOf(106595), listOf("Craft", "Make")),
-    BRAZIER("Brazier", Skill.FIREMAKING, intArrayOf(106601, 106602), listOf("Burn", "Add-logs", "Use"));
+    WORKBENCH("Workbench", Skill.CONSTRUCTION, intArrayOf(117926), listOf("Construct")),
+    FLETCHER("Fletcher", Skill.FLETCHING, intArrayOf(106598, 106599), listOf("Fletch")),
+    RANGE("Range", Skill.COOKING, intArrayOf(89768), listOf("Cook")),
+    WELL("Well", Skill.HERBLORE, intArrayOf(89770), listOf("Mix Potions")),
+    CRAFTER("Crafter", Skill.CRAFTING, intArrayOf(106594, 106595, 106596, 106597), listOf("Craft")),
+    BRAZIER("Brazier", Skill.FIREMAKING, intArrayOf(106601, 106602), listOf("Add logs"));
 
     override fun toString() = label
 

@@ -43,7 +43,7 @@ import org.projectx.core.game.skill.Skill
  */
 @ScriptDescription(
     name = "Urn Crafter",
-    version = "1.0.0",
+    version = "1.0.1",
     author = "Cryptic",
     description = "Moulds and fires urns at a portable crafter, restocking soft clay from a bank preset. " +
         "Stand where the crafter and a bank are both in reach.",
@@ -271,12 +271,15 @@ class UrnCrafter : Script(), ConfigurableScript {
         val CRAFTER_IDS = intArrayOf(106594, 106595, 106596, 106597)
 
         /**
-         * A crafter's left-click option is set by whoever placed it, so the wording varies and the first
-         * one the placed object actually carries is the one used.
+         * How to get at the clay jobs, best first.
+         *
+         * A crafter offers several trades - it also cuts gems and tans leather - and "Clay Crafting" is the
+         * one that leads to urns directly. "Craft" is the fallback for a crafter configured to lead with
+         * something else, since it reaches the same menu.
          */
-        val CRAFTER_OPTIONS = listOf("Craft", "Make", "Use")
+        val CRAFTER_OPTIONS = listOf("Clay Crafting", "Craft")
 
-        val BANK_OPTIONS = listOf("Load Last Preset", "Bank", "Use", "Open")
+        val BANK_OPTIONS = listOf("Load Last Preset from", "Use", "Bank", "Open")
 
         /** A freshly opened bank can read empty for a moment, so being out is confirmed rather than assumed. */
         const val MAX_FAILED_BANKINGS = 3

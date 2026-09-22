@@ -29,9 +29,14 @@ enum class Urn(
 
     override fun toString() = label
 
-    /** Which of the two the crafter is being asked for on this pass. */
+    /**
+     * Which of the two the crafter is being asked for on this pass.
+     *
+     * [dialogue] is matched against what the crafter's menu actually says, read off it rather than guessed:
+     * moulding is offered as "Form Clay", which no amount of looking for "Mould" would have found.
+     */
     enum class Stage(val dialogue: String, val describe: String) {
-        MOULD("Mould", "Moulding clay"),
+        MOULD("Form Clay", "Moulding clay"),
         FIRE("Fire", "Firing urns"),
     }
 
