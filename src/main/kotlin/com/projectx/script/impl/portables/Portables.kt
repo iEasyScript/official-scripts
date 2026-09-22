@@ -1,0 +1,249 @@
+package com.projectx.script.impl.portables
+
+import com.projectx.script.BooleanConfigItem
+import com.projectx.script.ConfigurableScript
+import com.projectx.script.EnumConfigItem
+import com.projectx.script.IntConfigItem
+import com.projectx.script.Script
+import com.projectx.script.ScriptCategory
+import com.projectx.script.ScriptDescription
+import com.projectx.script.api.MakeX
+import com.projectx.script.api.SkillTracker
+import com.projectx.script.api.bankOpen
+import com.projectx.script.api.captureSerenSpirit
+import com.projectx.script.api.findClosestObject
+import com.projectx.script.api.getXp
+import com.projectx.script.api.inventory
+import com.projectx.script.api.isLoggedIn
+import com.projectx.script.api.isPlayerBusy
+import com.projectx.script.api.loadBankPreset
+import com.projectx.script.api.makeXConfirm
+import com.projectx.ui.backend.dsl.ImGuiDsl
+import com.projectx.ui.backend.dsl.scopes.section
+import com.projectx.ui.backend.dsl.scopes.separator
+import com.projectx.ui.backend.dsl.scopes.text
+import com.projectx.ui.backend.dsl.scopes.xpProgressBar
+
+/**
+ * Works a portable skilling station until the materials run out.
+ *
+ * Portables are placed by players and stand for a while, so the whole run happens in one spot: fill from a
+ * bank preset, feed the station, repeat. There is no walking and no route - if the station and a bank are
+ * not both in reach, this is not the script for the job.
+ *
+ * What is being made is decided by the bank preset and by whatever the make window was last set to, not by
+ * configuration here. The preset carries the materials and the window remembers the recipe, so this only
+ * has to keep the two meeting. That is why there is no list of item ids to fill in.
+ */
+@ScriptDescription(
+    name = "Portables",
+    version = "1.0.0",
+    author = "Cryptic",
+    description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - " +
+        "restocking from a bank preset. Stand where the station and a bank are both in reach.",
+    category = ScriptCategory.CRAFTING,
+)
+class Portables : Script(), ConfigurableScript {
+
+    private val station = EnumConfigItem(
+        name = "Station",
+        description = "The portable to work at.",
+        enumValues = Portable.entries.toTypedArray(),
+        initialValue = Portable.CRAFTER,
+    )
+
+    private val preset = IntConfigItem(
+        name = "Bank preset",
+        description = "The preset to load when out of materials. 0 loads whichever preset was used last.",
+        initialValue = 0,
+        min = 0,
+        max = 9,
+    )
+
+    private val stopWhenOut = BooleanConfigItem(
+        name = "Stop when the bank runs dry",
+        description = "Stop once a preset no longer restocks anything, rather than waiting for more.",
+        initialValue = true,
+    )
+
+    private val tracker = SkillTracker()
+
+    private var status = "Starting"
+    private var lastXpGainMillis = 0L
+    private var lastXpTotal = 0
+    private var lastStationSeenMillis = 0L
+
+    override fun onStart() {
+        tracker.reset()
+        val now = System.currentTimeMillis()
+        lastXpGainMillis = now
+        lastStationSeenMillis = now
+        lastXpTotal = getXp(station.value.skill)
+        println("[Portables] Working a ${station.value} for ${station.value.skill}")
+    }
+
+    override suspend fun loop() {
+        if (!isLoggedIn()) return delay(1800, 600)
+        if (!isPlayerBusy() && captureSerenSpirit()) return tracker.add("Seren spirits")
+
+        noteProgress()
+        if (giveUp()) return
+
+        // The make window being open and idle is always the next move, whatever else is true.
+        if (MakeX.isOpen && !MakeX.inProgress) {
+            status = "Starting the job"
+            makeXConfirm()
+            return delay(900, 400)
+        }
+
+        if (isPlayerBusy() || MakeX.inProgress) {
+            status = "Working"
+            return delay(700, 300)
+        }
+
+        if (bankOpen || inventory.isEmpty) {
+            restock()
+            return
+        }
+
+        useStation()
+    }
+
+    /**
+     * Sends the player at the station.
+     *
+     * A station that is in the scene but offers nothing we recognise is named in the log rather than
+     * clicked at. The option list is the part most likely to be wrong - a portable's left-click option is
+     * configurable, so the wording varies - and a run that says what it saw can be corrected from one line.
+     */
+    private suspend fun useStation() {
+        val portable = station.value
+        val obj = findClosestObject(SEARCH_RANGE) { portable.matches(it) }
+        if (obj == null) {
+            status = "No ${portable.toString().lowercase()} in reach"
+            return delay(1200, 400)
+        }
+        lastStationSeenMillis = System.currentTimeMillis()
+
+        val option = portable.optionOn(obj)
+        if (option == null) {
+            println(
+                "[Portables] ${obj.name()} (${obj.id}/${obj.visibleTypeId}) offers none of " +
+                    "${portable.options}; the one it does offer needs adding",
+            )
+            status = "Station offers no option I know"
+            return delay(1500, 500)
+        }
+
+        status = "Using the ${portable.toString().lowercase()}"
+        if (!obj.interact(option)) return delay(800, 300)
+
+        if (portable.usesMakeInterface) {
+            delayUntil(INTERFACE_TIMEOUT) { MakeX.isOpen }
+        } else {
+            // Nothing opens for a brazier; the player simply starts burning where they stand.
+            delayUntil(INTERFACE_TIMEOUT) { isPlayerBusy() }
+        }
+        delay(600, 250)
+    }
+
+    /** Fills the backpack from the bank, or decides there is nothing left to fill it with. */
+    private suspend fun restock() {
+        if (!bankOpen) {
+            val bank = findClosestObject(SEARCH_RANGE) { obj -> BANK_OPTIONS.any { obj.hasOption(it) } }
+            if (bank == null) {
+                status = "No bank in reach"
+                return delay(1500, 500)
+            }
+            status = "Opening the bank"
+            val option = BANK_OPTIONS.first { bank.hasOption(it) }
+            if (!bank.interact(option)) return delay(800, 300)
+            delayUntil(INTERFACE_TIMEOUT) { bankOpen }
+            if (!bankOpen) return
+        }
+
+        status = "Loading preset"
+        loadBankPreset(if (preset.value > 0) preset.value else LAST_PRESET)
+        delayUntil(INTERFACE_TIMEOUT) { !bankOpen }
+        delay(700, 300)
+
+        if (inventory.isEmpty) {
+            // The preset gave nothing, so the bank has nothing left to give.
+            if (stopWhenOut.value) {
+                println("[Portables] The preset restocked nothing; stopping")
+                stop()
+            } else {
+                status = "Waiting for materials"
+                delay(5000, 2000)
+            }
+            return
+        }
+        tracker.add("Loads")
+    }
+
+    /** Keeps the clock honest about when the account last actually gained something. */
+    private fun noteProgress() {
+        val xp = getXp(station.value.skill)
+        if (xp > lastXpTotal) {
+            lastXpTotal = xp
+            lastXpGainMillis = System.currentTimeMillis()
+        }
+    }
+
+    /**
+     * Whether to stop.
+     *
+     * Two silences mean different things. No experience while a station is standing there is the run being
+     * broken. No station at all is somebody having picked theirs up, which is worth waiting out for longer
+     * because another usually appears - so that clock is the generous one, and it also holds off the first.
+     */
+    private fun giveUp(): Boolean {
+        val now = System.currentTimeMillis()
+        val sinceStation = now - lastStationSeenMillis
+        if (sinceStation > NO_STATION_TIMEOUT) {
+            println("[Portables] No ${station.value} for ${NO_STATION_TIMEOUT / 60_000} minutes; stopping")
+            stop()
+            return true
+        }
+        if (now - lastXpGainMillis > NO_PROGRESS_TIMEOUT && sinceStation < NO_PROGRESS_TIMEOUT) {
+            println("[Portables] No ${station.value.skill} experience in ${NO_PROGRESS_TIMEOUT / 1000}s; stopping")
+            stop()
+            return true
+        }
+        return false
+    }
+
+    override fun render() {
+        val portable = station.value
+        ImGuiDsl.window("Portables") {
+            section("Station")
+            text("$portable  -  ${portable.skill}")
+            text("Preset: ${if (preset.value > 0) preset.value.toString() else "last used"}")
+            separator()
+            section("Progress")
+            text("Status: $status")
+            text("Loads: ${tracker.countOf("Loads")}")
+            text("XP/hr: ${tracker.xpPerHour(portable.skill)}")
+            xpProgressBar(portable.skill)
+        }
+    }
+
+    override fun onStop() =
+        println("[Portables] Stopped after ${tracker.countOf("Loads")} loads at a ${station.value}")
+
+    private companion object {
+        const val SEARCH_RANGE = 12
+        const val INTERFACE_TIMEOUT = 6_000L
+
+        /** Long enough that a station being replaced does not end the run. */
+        const val NO_STATION_TIMEOUT = 5 * 60_000L
+
+        /** Short, because a station that is present and giving nothing is broken rather than slow. */
+        const val NO_PROGRESS_TIMEOUT = 90_000L
+
+        /** What the game calls loading whichever preset was used last. */
+        const val LAST_PRESET = 0
+
+        val BANK_OPTIONS = listOf("Load Last Preset", "Bank", "Use", "Open")
+    }
+}
