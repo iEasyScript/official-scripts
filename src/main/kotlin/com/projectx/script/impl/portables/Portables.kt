@@ -17,6 +17,8 @@ import com.projectx.script.api.inventory
 import com.projectx.script.api.isLoggedIn
 import com.projectx.script.api.isPlayerBusy
 import com.projectx.script.api.loadBankPreset
+import com.projectx.game.input.Key
+import com.projectx.script.api.clickKey
 import com.projectx.script.api.makeXConfirm
 import com.projectx.ui.backend.dsl.ImGuiDsl
 import com.projectx.ui.backend.dsl.scopes.section
@@ -37,7 +39,7 @@ import com.projectx.ui.backend.dsl.scopes.xpProgressBar
  */
 @ScriptDescription(
     name = "Portables",
-    version = "1.1.0",
+    version = "1.2.0",
     author = "Cryptic",
     description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - " +
         "restocking from a bank preset. Stand where the station and a bank are both in reach.",
@@ -89,8 +91,15 @@ class Portables : Script(), ConfigurableScript {
         noteProgress()
         if (giveUp()) return
 
-        // The make window being open and idle is always the next move, whatever else is true.
+        // The window, once open, is the only honest answer to whether there is anything left to make. A
+        // backpack holding what was just made is not an empty one, so its contents cannot be asked - which
+        // is how a run came to finish a batch of potions and go straight back to the well for another.
         if (MakeX.isOpen && !MakeX.inProgress) {
+            if (MakeX.maxQuantity <= 0) {
+                status = "Out of materials"
+                closeMakeWindow()
+                return restock()
+            }
             status = "Starting the job"
             makeXConfirm()
             return delay(900, 400)
@@ -101,6 +110,7 @@ class Portables : Script(), ConfigurableScript {
             return delay(700, 300)
         }
 
+        // A brazier puts up no window to ask, so for that one an empty backpack is the signal.
         if (bankOpen || inventory.isEmpty) return restock()
 
         useStation()
@@ -152,6 +162,7 @@ class Portables : Script(), ConfigurableScript {
      * that opens it.
      */
     private suspend fun restock() {
+        closeMakeWindow()
         val chest = findClosestObject(SEARCH_RANGE) { obj -> BANK_OPTIONS.any { obj.hasOption(it) } }
         if (chest == null && !bankOpen) {
             status = "No bank in reach"
@@ -189,7 +200,23 @@ class Portables : Script(), ConfigurableScript {
             }
             return
         }
+        // Restocking is progress even though it earns nothing, so the idle clock starts again here. Without
+        // that, a run told to wait for materials would be stopped by the very timer meant to catch a run
+        // that is stuck.
+        lastXpGainMillis = System.currentTimeMillis()
         tracker.add("Loads")
+    }
+
+    /**
+     * Shuts the make window, which otherwise sits over the bank chest and a preset will not load beneath it.
+     *
+     * Escape rather than the close button: the window's close component is not where the other make-style
+     * interfaces keep theirs, and a key that always works beats a number that has to be right.
+     */
+    private suspend fun closeMakeWindow() {
+        if (!MakeX.isOpen) return
+        clickKey(Key.ESCAPE)
+        delayUntil(INTERFACE_TIMEOUT) { !MakeX.isOpen }
     }
 
     /** Keeps the clock honest about when the account last actually gained something. */
@@ -254,6 +281,7 @@ class Portables : Script(), ConfigurableScript {
 
         /** What the game calls loading whichever preset was used last. */
         const val LAST_PRESET = 0
+
 
         /** What a bank chest calls filling the backpack from the preset you last used, in one click. */
         const val LOAD_LAST_PRESET = "Load Last Preset from"
