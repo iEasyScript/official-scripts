@@ -43,7 +43,7 @@ import org.projectx.core.game.skill.Skill
  */
 @ScriptDescription(
     name = "Urn Crafter",
-    version = "1.0.1",
+    version = "1.1.0",
     author = "Cryptic",
     description = "Moulds and fires urns at a portable crafter, restocking soft clay from a bank preset. " +
         "Stand where the crafter and a bank are both in reach.",
@@ -91,7 +91,7 @@ class UrnCrafter : Script(), ConfigurableScript {
         if (isPlayerBusy() || MakeX.inProgress) {
             status = stage.describe
             failedBankings = 0
-            return delay(700, 300)
+            return delay(300, 300)
         }
 
         // The two windows the crafter puts up, in the order it puts them up.
@@ -172,8 +172,9 @@ class UrnCrafter : Script(), ConfigurableScript {
     private suspend fun restock() {
         val chosen = urn.value
         if (!inventory.isEmpty) {
+            val held = inventory.usedSlots
             depositAllInventory()
-            delay(800, 300)
+            delayUntil(RESTOCK_TIMEOUT, pollingDelayMillis = RESTOCK_POLL) { inventory.usedSlots < held }
         }
 
         // Withdrawing is by name, and the bank entry is the one place the name is already spelled the
@@ -182,7 +183,9 @@ class UrnCrafter : Script(), ConfigurableScript {
         if (stored != null) {
             status = "Withdrawing unfired urns"
             withdrawBankItem(stored.name)
-            delayUntil(INTERFACE_TIMEOUT) { inventory.count(chosen.unfiredId) >= Urn.LOAD }
+            delayUntil(RESTOCK_TIMEOUT, pollingDelayMillis = RESTOCK_POLL) {
+                inventory.count(chosen.unfiredId) >= Urn.LOAD
+            }
             if (inventory.count(chosen.unfiredId) >= Urn.LOAD) {
                 failedBankings = 0
                 tracker.add("Loads")
@@ -193,8 +196,11 @@ class UrnCrafter : Script(), ConfigurableScript {
         if (bank.count(Urn.SOFT_CLAY) >= Urn.LOAD) {
             status = "Loading clay preset"
             loadBankPreset(if (clayPreset.value > 0) clayPreset.value else LAST_PRESET)
-            delayUntil(INTERFACE_TIMEOUT) { !bankOpen }
-            delay(800, 300)
+            // The clay arriving is the signal, not the window closing. Waiting on the window and then
+            // pausing on top of it was most of what a load cost.
+            delayUntil(RESTOCK_TIMEOUT, pollingDelayMillis = RESTOCK_POLL) {
+                inventory.count(Urn.SOFT_CLAY) >= Urn.LOAD
+            }
             if (inventory.count(Urn.SOFT_CLAY) >= Urn.LOAD) {
                 failedBankings = 0
                 tracker.add("Loads")
@@ -264,6 +270,10 @@ class UrnCrafter : Script(), ConfigurableScript {
         const val SEARCH_RANGE = 12
         const val INTERFACE_TIMEOUT = 6_000L
         const val PROCESS_TIMEOUT = 5_000L
+
+        /** How long the backpack gets to change, and how closely it is watched - a preset lands in one tick. */
+        const val RESTOCK_TIMEOUT = 5_000L
+        const val RESTOCK_POLL = 60
         const val NO_PROGRESS_TIMEOUT = 90_000L
         const val LAST_PRESET = 0
 

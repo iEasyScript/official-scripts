@@ -11,6 +11,7 @@ import com.projectx.script.api.MakeX
 import com.projectx.script.api.SkillTracker
 import com.projectx.script.api.bankOpen
 import com.projectx.script.api.captureSerenSpirit
+import com.projectx.script.api.closeBank
 import com.projectx.script.api.findClosestObject
 import com.projectx.script.api.getXp
 import com.projectx.script.api.inventory
@@ -39,7 +40,7 @@ import com.projectx.ui.backend.dsl.scopes.xpProgressBar
  */
 @ScriptDescription(
     name = "Portables",
-    version = "1.3.0",
+    version = "1.4.0",
     author = "Cryptic",
     description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - " +
         "restocking from a bank preset. Stand where the station and a bank are both in reach.",
@@ -188,7 +189,6 @@ class Portables : Script(), ConfigurableScript {
         if (preset.value == 0 && chest != null && chest.hasOption(LOAD_LAST_PRESET)) {
             status = "Loading last preset"
             if (!chest.interact(LOAD_LAST_PRESET)) return delay(800, 300)
-            delayUntil(INTERFACE_TIMEOUT) { inventory.usedSlots != before }
         } else {
             if (!bankOpen) {
                 status = "Opening the bank"
@@ -200,9 +200,13 @@ class Portables : Script(), ConfigurableScript {
             }
             status = "Loading preset ${preset.value}"
             loadBankPreset(preset.value)
-            delayUntil(INTERFACE_TIMEOUT) { !bankOpen }
         }
-        delay(700, 300)
+
+        // A preset arrives in one go, so the backpack changing is the whole of the signal and there is
+        // nothing left to wait out after it. Waiting on the bank window closing instead, and then pausing
+        // on top of that, was most of the time a load took.
+        delayUntil(RESTOCK_TIMEOUT, pollingDelayMillis = RESTOCK_POLL) { inventory.usedSlots != before }
+        if (bankOpen) closeBank()
 
         if (inventory.isEmpty) {
             // Nothing came back, so the bank has nothing left to give.
@@ -301,6 +305,10 @@ class Portables : Script(), ConfigurableScript {
     private companion object {
         const val SEARCH_RANGE = 12
         const val INTERFACE_TIMEOUT = 6_000L
+
+        /** How long a preset gets to land, and how closely it is watched for - it arrives in one tick. */
+        const val RESTOCK_TIMEOUT = 5_000L
+        const val RESTOCK_POLL = 60
 
         /** Long enough that a station being replaced does not end the run. */
         const val NO_STATION_TIMEOUT = 5 * 60_000L
