@@ -1,6 +1,8 @@
 package com.projectx.script.impl.portables
 
 import com.projectx.script.BooleanConfigItem
+import com.projectx.script.ConfigItem
+import com.projectx.script.ConfigVisibilityProvider
 import com.projectx.script.ConfigurableScript
 import com.projectx.script.EnumConfigItem
 import com.projectx.script.IntConfigItem
@@ -34,19 +36,20 @@ import com.projectx.ui.backend.dsl.scopes.xpProgressBar
  * bank preset, feed the station, repeat. There is no walking and no route - if the station and a bank are
  * not both in reach, this is not the script for the job.
  *
- * What is being made is decided by the bank preset and by whatever the make window was last set to, not by
- * configuration here. The preset carries the materials and the window remembers the recipe, so this only
+ * Which of a station's jobs to do - a crafter cuts gems, tans leather and fires clay as well as crafting - is
+ * chosen here. What is being made within that job is decided by the bank preset and by whatever the make
+ * window was last set to. The preset carries the materials and the window remembers the recipe, so this only
  * has to keep the two meeting. That is why there is no list of item ids to fill in.
  */
 @ScriptDescription(
     name = "Portables",
-    version = "1.4.0",
+    version = "1.5.0",
     author = "Cryptic",
-    description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - " +
-        "restocking from a bank preset. Stand where the station and a bank are both in reach.",
+    description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - at any " +
+        "of its jobs, restocking from a bank preset. Stand where the station and a bank are both in reach.",
     category = ScriptCategory.CRAFTING,
 )
-class Portables : Script(), ConfigurableScript {
+class Portables : Script(), ConfigurableScript, ConfigVisibilityProvider {
 
     private val station = EnumConfigItem(
         name = "Station",
@@ -54,6 +57,20 @@ class Portables : Script(), ConfigurableScript {
         enumValues = Portable.entries.toTypedArray(),
         initialValue = Portable.CRAFTER,
     )
+
+    private val fletcherJob = jobConfig(Portable.FLETCHER)
+    private val crafterJob = jobConfig(Portable.CRAFTER)
+    private val brazierJob = jobConfig(Portable.BRAZIER)
+
+    /** The job picker for each station that has more than one job; the rest have nothing to choose. */
+    private val jobConfigs = mapOf(
+        Portable.FLETCHER to fletcherJob,
+        Portable.CRAFTER to crafterJob,
+        Portable.BRAZIER to brazierJob,
+    )
+
+    private val job: PortableJob
+        get() = jobConfigs[station.value]?.value ?: station.value.jobs.first()
 
     private val preset = IntConfigItem(
         name = "Bank preset",
@@ -91,9 +108,9 @@ class Portables : Script(), ConfigurableScript {
         val now = System.currentTimeMillis()
         lastXpGainMillis = now
         lastStationSeenMillis = now
-        lastXpTotal = getXp(station.value.skill)
+        lastXpTotal = getXp(job.skill)
         materials = inventory.map { it.id }.toSet()
-        println("[Portables] Working a ${station.value} for ${station.value.skill}")
+        println("[Portables] ${job} at a ${station.value} for ${job.skill}")
     }
 
     override suspend fun loop() {
@@ -135,12 +152,13 @@ class Portables : Script(), ConfigurableScript {
     /**
      * Sends the player at the station.
      *
-     * A station that is in the scene but offers nothing we recognise is named in the log rather than
-     * clicked at. The option list is the part most likely to be wrong - a portable's left-click option is
-     * configurable, so the wording varies - and a run that says what it saw can be corrected from one line.
+     * A station that is in the scene but does not offer the chosen job is named in the log rather than
+     * clicked at. The wording is the part most likely to be wrong, and a run that says what it saw can be
+     * corrected from one line - which is how the brazier's "Add logs" was found.
      */
     private suspend fun useStation() {
         val portable = station.value
+        val job = job
         val obj = findClosestObject(SEARCH_RANGE) { portable.matches(it) }
         if (obj == null) {
             status = "No ${portable.toString().lowercase()} in reach"
@@ -148,20 +166,19 @@ class Portables : Script(), ConfigurableScript {
         }
         lastStationSeenMillis = System.currentTimeMillis()
 
-        val option = portable.optionOn(obj)
-        if (option == null) {
+        if (!obj.hasOption(job.option)) {
             println(
-                "[Portables] ${obj.name()} (${obj.id}/${obj.visibleTypeId}) offers none of " +
-                    "${portable.options}; the one it does offer needs adding",
+                "[Portables] ${obj.name()} (${obj.id}/${obj.visibleTypeId}) does not offer " +
+                    "\"${job.option}\"; its wording needs correcting",
             )
-            status = "Station offers no option I know"
+            status = "Station offers no \"${job.option}\""
             return delay(1500, 500)
         }
 
-        status = "Using the ${portable.toString().lowercase()}"
-        if (!obj.interact(option)) return delay(800, 300)
+        status = "${job}: using the ${portable.toString().lowercase()}"
+        if (!obj.interact(job.option)) return delay(800, 300)
 
-        if (portable.usesMakeInterface) {
+        if (job.opensMakeWindow) {
             delayUntil(INTERFACE_TIMEOUT) { MakeX.isOpen }
         } else {
             // Nothing opens for a brazier; the player simply starts burning where they stand.
@@ -254,7 +271,7 @@ class Portables : Script(), ConfigurableScript {
 
     /** Keeps the clock honest about when the account last actually gained something. */
     private fun noteProgress() {
-        val xp = getXp(station.value.skill)
+        val xp = getXp(job.skill)
         if (xp > lastXpTotal) {
             lastXpTotal = xp
             lastXpGainMillis = System.currentTimeMillis()
@@ -277,30 +294,44 @@ class Portables : Script(), ConfigurableScript {
             return true
         }
         if (now - lastXpGainMillis > NO_PROGRESS_TIMEOUT && sinceStation < NO_PROGRESS_TIMEOUT) {
-            println("[Portables] No ${station.value.skill} experience in ${NO_PROGRESS_TIMEOUT / 1000}s; stopping")
+            println("[Portables] No ${job.skill} experience in ${NO_PROGRESS_TIMEOUT / 1000}s; stopping")
             stop()
             return true
         }
         return false
     }
 
+    /** Only the selected station's job picker is shown; the others would be choices that do nothing. */
+    override fun isConfigItemVisible(fieldName: String, item: ConfigItem<*>): Boolean {
+        jobConfigs.forEach { (portable, config) -> if (config === item) return portable == station.value }
+        return true
+    }
+
+    private fun jobConfig(portable: Portable) = EnumConfigItem(
+        name = "$portable job",
+        description = "Which of the ${portable.toString().lowercase()}'s options to use.",
+        enumValues = portable.jobs.toTypedArray(),
+        initialValue = portable.jobs.first(),
+    )
+
     override fun render() {
         val portable = station.value
+        val job = job
         ImGuiDsl.window("Portables") {
             section("Station")
-            text("$portable  -  ${portable.skill}")
+            text("$portable  -  $job (${job.skill})")
             text("Preset: ${if (preset.value > 0) preset.value.toString() else "last used"}")
             separator()
             section("Progress")
             text("Status: $status")
             text("Loads: ${tracker.countOf("Loads")}")
-            text("XP/hr: ${tracker.xpPerHour(portable.skill)}")
-            xpProgressBar(portable.skill)
+            text("XP/hr: ${tracker.xpPerHour(job.skill)}")
+            xpProgressBar(job.skill)
         }
     }
 
     override fun onStop() =
-        println("[Portables] Stopped after ${tracker.countOf("Loads")} loads at a ${station.value}")
+        println("[Portables] Stopped after ${tracker.countOf("Loads")} loads of $job at a ${station.value}")
 
     private companion object {
         const val SEARCH_RANGE = 12
