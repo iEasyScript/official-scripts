@@ -8,18 +8,25 @@ group = "com.projectx"
 version = "1.0.0"
 
 repositories {
-    mavenCentral()
-    // The script API is published as GitHub release assets, not to Maven Central.
-    exclusiveContent {
-        forRepository {
-            ivy {
-                name = "Project X script API"
-                url = uri("https://github.com/iEasyScript/script-api/releases/download")
-                patternLayout { artifact("v[revision]/[artifact]-[revision].[ext]") }
-                metadataSources { artifact() }
-            }
+    // com.projectx is excluded from the public repository so it can only ever come from the
+    // release repository below - the same guarantee the exclusiveContent block used to give.
+    mavenCentral { content { excludeGroup("com.projectx") } }
+    // The script API is published as GitHub release assets, not to Maven Central. The ivy
+    // descriptor is what lets the IDE find the -sources jar next to the jar: with artifact-only
+    // metadata Gradle has nothing to read and never looks for sources. Releases published before
+    // the descriptors existed have none, so artifact() keeps those resolving exactly as before.
+    ivy {
+        name = "Project X script API"
+        url = uri("https://github.com/iEasyScript/script-api/releases/download")
+        patternLayout {
+            ivy("v[revision]/ivy-[module]-[revision].xml")
+            artifact("v[revision]/[artifact]-[revision](-[classifier]).[ext]")
         }
-        filter { includeGroup("com.projectx") }
+        metadataSources {
+            ivyDescriptor()
+            artifact()
+        }
+        content { includeGroup("com.projectx") }
     }
 }
 
