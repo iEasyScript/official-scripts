@@ -43,7 +43,7 @@ import com.projectx.ui.backend.dsl.scopes.xpProgressBar
  */
 @ScriptDescription(
     name = "Portables",
-    version = "1.5.0",
+    version = "1.5.1",
     author = "Cryptic",
     description = "Works a portable station - workbench, fletcher, range, well, crafter or brazier - at any " +
         "of its jobs, restocking from a bank preset. Stand where the station and a bank are both in reach.",
@@ -99,6 +99,15 @@ class Portables : Script(), ConfigurableScript, ConfigVisibilityProvider {
      */
     private var materials: Set<Int> = emptySet()
 
+    /**
+     * Whether this load's batch has run: the game's progress window was seen counting it down.
+     *
+     * A batch makes everything it can in one go, so once that window closes the load is done and the bank is
+     * next - even with materials still in the backpack, which is what a perk that saves ingredients leaves.
+     * Going back to the station for those few made the round uneven: station, make, station again, bank.
+     */
+    private var batchRan = false
+
     private var lastXpGainMillis = 0L
     private var lastXpTotal = 0
     private var lastStationSeenMillis = 0L
@@ -110,19 +119,18 @@ class Portables : Script(), ConfigurableScript, ConfigVisibilityProvider {
         lastStationSeenMillis = now
         lastXpTotal = getXp(job.skill)
         materials = inventory.map { it.id }.toSet()
+        batchRan = false
         println("[Portables] ${job} at a ${station.value} for ${job.skill}")
     }
 
     override suspend fun loop() {
         if (!isLoggedIn()) return delay(1800, 600)
-        if (!isPlayerBusy() && captureSerenSpirit()) return tracker.add("Seren spirits")
+        // Not mid-batch: clicking a spirit stops the batch, and it waits out the trip to the bank well enough.
+        if (!isPlayerBusy() && !MakeX.inProgress && captureSerenSpirit()) return tracker.add("Seren spirits")
 
         noteProgress()
         if (giveUp()) return
 
-        // A window that is up and idle either has something to make or it does not, and its own count says
-        // which. This is the safety net rather than the usual path: a run that knows its materials are gone
-        // never opens one to be told so.
         if (MakeX.isOpen && !MakeX.inProgress) {
             if (MakeX.maxQuantity <= 0) {
                 status = "Out of materials"
@@ -134,16 +142,25 @@ class Portables : Script(), ConfigurableScript, ConfigVisibilityProvider {
             return delay(400, 400)
         }
 
-        if (isPlayerBusy() || MakeX.inProgress) {
+        if (MakeX.inProgress) {
+            batchRan = true
+            status = "Working"
+            return delay(300, 300)
+        }
+
+        // Before the busy check: the last item's animation can outlast the window by a moment, and the bank
+        // is the next stop either way.
+        if (batchRan) {
+            status = "Batch done"
+            return restock()
+        }
+
+        if (isPlayerBusy()) {
             status = "Working"
             return delay(300, 300)
         }
 
         if (bankOpen) return restock()
-
-        // A batch makes everything it can, so once the materials the preset handed over are gone the job is
-        // finished and the bank is the next stop. Opening the station again to be told nothing can be made
-        // is a wasted trip, and a conspicuous one.
         if (outOfMaterials()) return restock()
 
         useStation()
@@ -241,6 +258,7 @@ class Portables : Script(), ConfigurableScript, ConfigVisibilityProvider {
         // that is stuck.
         lastXpGainMillis = System.currentTimeMillis()
         materials = inventory.map { it.id }.toSet()
+        batchRan = false
         tracker.add("Loads")
     }
 
