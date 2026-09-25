@@ -91,6 +91,36 @@ Start it at the colony; it picks up the wisps around you.
   once you hold the amount set under *Empower at*. *Only chronicle fragments*
   waits at the colony for them without harvesting.
 
+### Archaeology Qualifications
+
+Works an account up the Archaeology qualifications - Intern, Assistant,
+Associate, Professor, Guildmaster - by doing whichever of their requirements is
+still outstanding. Start it at a dig site, or at the guild to do a restoration
+run.
+
+- It keeps no progress of its own. The qualification held, artefacts excavated
+  and restored, collections finished, mysteries solved and research banked are
+  all read from the account's own vars, so stopping it and starting it again a
+  week later carries on from exactly where it was.
+- Each pass it picks the job that moves the next qualification on: get a
+  research contract out, restore what has been dug, take finished artefacts to
+  their collector, or dig the best hotspot it can reach. When the last
+  requirement lands it attends the ceremony that actually awards the rank.
+- Hotspots, restoration recipes and collections come from the game cache, so it
+  digs the best hotspot for your level without a hand-kept list, and it will
+  choose a hotspot that feeds a collection you are close to finishing.
+- Materials go to storage through the dig site's own cart as they arrive, soil
+  goes into the soil box and is screened on the trip home, and only artefacts
+  ride back with you.
+- The way to each hotspot is learned the first time it stands at one and kept in
+  `~/.projectx/script-data/archaeology-hotspots.txt`, so later runs walk
+  straight back. The Archaeology journal must be in your backpack: it is what
+  teleports home.
+- Two things it does not do. Mysteries are twenty hand-built puzzle chains, so
+  it counts them and tells you how many are left. Research needs a team you have
+  hired; it will send an existing team out, but it will not spend your chronotes
+  hiring one.
+
 ### Bank Burier
 
 Buries bones or scatters ashes next to a bank, keeping Powder of burials active
@@ -104,6 +134,34 @@ the bones or ashes and some Powder of burials in it.
 - Anything else in the backpack is deposited first, and bank withdrawals are
   switched off notes.
 - It stops when the bank runs out of the chosen bones or ashes, or of powder.
+
+### Raksha
+
+Kills Raksha, the Shadow Colossus (normal mode) with Necromancy, solo or as a
+duo. Start it anywhere; it teleports to War's Retreat and runs the whole loop.
+
+- At War's Retreat it restores prayer at the altar, loads the last bank preset
+  (entering the bank PIN when asked), fills adrenaline at the crystal, builds
+  5 residual souls and 12 necrosis on the training dummy and enters the portal.
+  The order of those stops is a setting.
+- In the lobby it conjures the undead army, casts Life Transfer into it, eats,
+  then rejoins the live instance or starts a new one.
+- Each phase runs its own scripted rotation from the PVME guide, falling back to
+  an adaptive Necromancy filler. Prayers are flicked against Raksha's autos,
+  with Soul Split in between.
+- Every mechanic is answered: floor shadows and the insta-kill highlight are
+  dodged first, tail sweeps are escaped, bombs are walked clear of, Shadow energy
+  is expelled, the manifestation is stunned and killed, and anima pools are
+  cleared in phase 3 when more than the configured number are standing.
+- It eats, drinks and keeps Ruination, the pocket scripture and the overload up,
+  swaps in a luck ring near the end, loots through the loot window and reclaims
+  items at Death's Office after a death.
+- Curses, a Necromancy action bar and a preset with vulnerability bombs, blue
+  blubber jellyfish, an elder overload and an adrenaline potion are required.
+
+Its rotation and prayer handling follow Sonson's Lua core modules (rotation
+manager, prayer flicker, player manager and War's Retreat), used under the
+Apache License 2.0.
 
 ## Releases
 
