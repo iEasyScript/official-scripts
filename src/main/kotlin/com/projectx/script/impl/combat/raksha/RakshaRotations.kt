@@ -17,7 +17,7 @@ import java.util.function.BooleanSupplier
 import kotlin.math.hypot
 
 internal class RakshaRotations(
-    private val settings: RakshaSettings,
+    var settings: RakshaSettings,
     private val fight: RakshaFightActions,
     private val log: (String) -> Unit,
 ) {

@@ -44,7 +44,7 @@ internal interface RakshaFightActions {
 }
 
 internal class RakshaFight(
-    private val settings: RakshaSettings,
+    settings: RakshaSettings,
     private val scan: ArenaScan,
     private val mechanics: RakshaMechanics,
     private val supplies: CombatSupplies,
@@ -54,6 +54,12 @@ internal class RakshaFight(
 ) : RakshaFightActions {
     val rotations = RakshaRotations(settings, this, log)
     val rotation = RotationManager(debug = settings.debug)
+
+    var settings: RakshaSettings = settings
+        set(value) {
+            field = value
+            rotations.settings = value
+        }
 
     var engaged = false
         private set
@@ -419,6 +425,10 @@ internal class RakshaFight(
 
     private suspend fun leave(script: Script) {
         script.awaitServerTicks(2)
+        if (localPlayer.isAnimating) {
+            script.delayUntil(gaussian(3600L, 700L)) { !localPlayer.isAnimating || WarsRetreat.isHere }
+            return
+        }
         if (!WarsRetreat.teleport()) {
             log("War's Retreat Teleport did not fire - retrying")
             script.delay(gaussian(1800, 600))

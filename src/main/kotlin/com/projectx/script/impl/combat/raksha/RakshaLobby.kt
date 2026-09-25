@@ -21,7 +21,7 @@ import com.projectx.script.api.typeText
 import com.projectx.util.gaussian
 
 internal class RakshaLobby(
-    private val settings: RakshaSettings,
+    var settings: RakshaSettings,
     private val fight: RakshaFight,
     private val log: (String) -> Unit,
 ) {

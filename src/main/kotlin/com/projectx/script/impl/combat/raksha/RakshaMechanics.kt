@@ -19,7 +19,7 @@ import kotlin.math.hypot
 import kotlin.math.min
 
 internal class RakshaMechanics(
-    private val settings: RakshaSettings,
+    var settings: RakshaSettings,
     private val scan: ArenaScan,
     private val log: (String) -> Unit,
 ) {

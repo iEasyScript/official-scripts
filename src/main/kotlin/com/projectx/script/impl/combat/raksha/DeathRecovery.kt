@@ -8,6 +8,7 @@ import com.projectx.script.api.awaitServerTicks
 import com.projectx.script.api.healthCurrent
 import com.projectx.script.api.inInstancedArea
 import com.projectx.script.api.interfaces
+import com.projectx.script.api.localPlayer
 import com.projectx.util.gaussian
 
 internal class DeathRecovery(
@@ -55,6 +56,11 @@ internal class DeathRecovery(
             return
         }
         if (!WarsRetreat.isHere) {
+            if (localPlayer.isAnimating || localPlayer.isMoving) {
+                status = "Arriving"
+                script.delayUntil(gaussian(3600L, 700L)) { WarsRetreat.isHere || (!localPlayer.isAnimating && !localPlayer.isMoving) }
+                return
+            }
             status = "Teleporting to War's Retreat"
             log("Death recovery: teleporting to War's Retreat")
             if (WarsRetreat.teleport()) script.delayUntil(gaussian(9000L, 1800L)) { WarsRetreat.isHere }

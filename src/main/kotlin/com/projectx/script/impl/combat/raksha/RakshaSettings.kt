@@ -41,6 +41,13 @@ internal data class RakshaSettings(
 
     fun scaled(soloHp: Int): Int = soloHp * partySize
 
+    fun withTripFieldsOf(current: RakshaSettings) = copy(
+        inParty = current.inParty,
+        isPartyLeader = current.isPartyLeader,
+        partyLeader = current.partyLeader,
+        useRevolution = current.useRevolution,
+    )
+
     companion object {
         val DEFAULT_TASK_ORDER = listOf(
             WarsRetreatTask.ALTAR,

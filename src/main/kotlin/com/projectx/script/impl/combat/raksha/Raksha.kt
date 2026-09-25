@@ -21,6 +21,8 @@ import com.projectx.script.api.Threshold
 import com.projectx.script.api.WarsRetreat
 import com.projectx.script.api.WarsRetreatTask
 import com.projectx.script.api.WarsRetreatTrip
+import com.projectx.script.api.awaitServerTick
+import com.projectx.script.api.localPlayer
 import com.projectx.script.api.adrenaline
 import com.projectx.script.api.familiarCastSpecial
 import com.projectx.script.api.familiarScrolls
@@ -47,7 +49,7 @@ import com.projectx.util.gaussian
 
 @ScriptDescription(
     name = "Raksha",
-    version = "1.0.0",
+    version = "1.0.3",
     author = "Cryptic",
     description = "Kills Raksha, the Shadow Colossus (normal mode) with Necromancy: banks and prebuilds at War's " +
         "Retreat, conjures in the lobby, fights all four phases with prayer flicking and every mechanic answered, " +
@@ -83,16 +85,16 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
     private val healthSpecial = IntConfigItem("Excalibur (%)", "Activate Enhanced Excalibur at or below this health.", 75, 0, 100)
 
     private val prayerSection = ConfigSection("Prayer")
-    private val prayerNormal = IntConfigItem("Restore below (points)", "Drink a restore at or below this many prayer points.", 400, 0, 9_900)
+    private val prayerNormal = IntConfigItem("Restore below (points)", "Drink a restore at or below this many prayer points.", 400, 0, MAX_PRAYER_POINTS)
     private val prayerCritical = IntConfigItem("Critical (%)", "With no restores left at this prayer, teleport out.", 10, 0, 100)
-    private val prayerSpecial = IntConfigItem("Elven shard below (points)", "Use the ancient elven ritual shard at or below this.", 601, 0, 9_900)
+    private val prayerSpecial = IntConfigItem("Elven shard below (points)", "Use the ancient elven ritual shard at or below this.", 601, 0, MAX_PRAYER_POINTS)
 
     private val warsSection = ConfigSection("War's Retreat")
     private val summonConjures = BooleanConfigItem("Summon conjures", "Summon conjures at War's Retreat. They are summoned in the lobby anyway.", false)
     private val usePrebuild = BooleanConfigItem("Use prebuild", "Build 5 souls and 12 necrosis on the training dummy before entering.", true)
     private val useAdrenCrystal = BooleanConfigItem("Use adrenaline crystal", "Fill adrenaline at the crystal.", true)
     private val bankIfInvFull = BooleanConfigItem("Bank if inventory full", "Reload the preset whenever the backpack is full.", false)
-    private val advancedMovement = BooleanConfigItem("Advanced movement", "Dive from the dummies toward the portal once the prebuild is done.", false)
+    private val advancedMovement = BooleanConfigItem("Advanced movement", "Surge and dive around War's Retreat: arrival to bank, bank to crystal, bank to portal, dummies to portal. Needs Surge and Dive on a bar.", false)
     private val surgeDiveChance = IntConfigItem("Surge/Dive chance (%)", "How often the advanced movement shortcut is taken.", 100, 0, 100)
     private val minPrayer = IntConfigItem("Altar below prayer (%)", "Pray at the altar when prayer is below this.", 100, 0, 100)
     private val minSummoning = IntConfigItem("Altar below summoning (%)", "Pray at the altar when summoning is below this.", 80, 0, 100)
@@ -120,6 +122,7 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
     private val bombEscapeDistance = IntConfigItem("Bomb escape distance", "Stand this many tiles clear of ground bombs.", 5, 1, 12)
 
     private lateinit var settings: RakshaSettings
+    private var pendingSettings: RakshaSettings? = null
     private lateinit var scan: ArenaScan
     private lateinit var mechanics: RakshaMechanics
     private lateinit var supplies: CombatSupplies
@@ -136,6 +139,11 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
     private var reviewLine = "-"
     private var recentSteps: List<String> = emptyList()
     private var lastFamiliarSpecialTick = -99L
+    private var currentStage = ""
+    private var unknownStillTicks = 0
+    private var unknownLastTick = -1L
+    private var unknownLastPosition: Triple<Int, Int, Int>? = null
+    private var unknownTicksNeeded = 0
 
     private inner class Stage(val name: String, val applies: () -> Boolean, val run: suspend () -> Unit)
 
@@ -144,11 +152,13 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
         Stage("Duo partner gone", { fight.partnerGone() }) { leaveForPartner() },
         Stage("Raksha arena", { !WarsRetreat.isHere && inInstancedArea }) { fightPass() },
         Stage("Raksha lobby", { lobby.isHere }) { lobby.pass(this) },
-        Stage("War's Retreat", { true }) { warsRetreatVisit() },
+        Stage("War's Retreat", { WarsRetreat.isHere }) { warsRetreatVisit() },
+        Stage(UNKNOWN_STAGE, { true }) { unknownLocation() },
     )
 
     override fun onStart() {
         settings = readSettings()
+        pendingSettings = null
         scan = ArenaScan()
         mechanics = RakshaMechanics(settings, scan) { if (settings.debug) println("[Raksha][MECH] $it") }
         supplies = CombatSupplies(
@@ -187,8 +197,13 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
         if (!isLoggedIn()) return delay(1800, 600)
         if (!WarsRetreat.isHere) supplies.update()
         val stage = stages.first { it.applies() }
+        if (stage.name != currentStage) {
+            log("Stage: ${currentStage.ifEmpty { "start" }} -> ${stage.name}")
+            currentStage = stage.name
+        }
         location = stage.name
         if (stage.name != "Raksha lobby") lobby.leftLobby()
+        if (stage.name != UNKNOWN_STAGE) resetUnknownLocation()
         stage.run()
         refreshOverlay()
     }
@@ -222,16 +237,13 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
     }
 
     private suspend fun warsRetreatVisit() {
+        applyPendingSettings()
         if (fight.engaged || fight.bossDead) {
             log("Back at War's Retreat - clearing fight state (adrenaline ${adrenaline.toInt()})")
             fight.reset()
         }
         lobby.resetTrip()
         flicker.deactivate()
-        if (!WarsRetreat.isHere) {
-            status = "Teleporting to War's Retreat"
-            if (!runWarsRetreatTrip(trip(emptyList(), loadPreset = false, prayAtAltar = false))) return
-        }
         val loadPreset = !loadoutPresent() || (settings.bankIfInvFull && inventory.isFull)
         val prayAtAltar = prayerPercent < settings.minPrayer || summoningPointsPercent < settings.minSummoning
         for (task in settings.warsTaskOrder) {
@@ -243,7 +255,7 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
                 }
                 WarsRetreatTask.PORTAL -> {
                     upkeepFamiliar()
-                    runWarsRetreatTrip(trip(listOf(task), loadPreset, prayAtAltar))
+                    runWarsRetreatTrip(trip(listOf(task), loadPreset, prayAtAltar)) && awaitLobby()
                 }
                 else -> runWarsRetreatTrip(trip(listOf(task), loadPreset, prayAtAltar))
             }
@@ -252,6 +264,47 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
                 return
             }
         }
+    }
+
+    private suspend fun awaitLobby(): Boolean {
+        status = "Entering the Raksha lobby"
+        delayUntil(gaussian(8000L, 1500L), FAST_POLL_MILLIS) { lobby.isHere || inInstancedArea }
+        if (!lobby.isHere && !inInstancedArea) log("Left War's Retreat but the Raksha lobby has not loaded yet")
+        return true
+    }
+
+    private suspend fun unknownLocation() {
+        val position = Triple(localPlayer.tileX, localPlayer.tileY, localPlayer.plane)
+        val settled = !localPlayer.isMoving && !localPlayer.isAnimating && position == unknownLastPosition
+        unknownLastPosition = position
+        val now = ServerTick.count
+        if (!settled) unknownStillTicks = 0
+        else if (now != unknownLastTick) unknownStillTicks++
+        unknownLastTick = now
+        if (unknownTicksNeeded == 0) unknownTicksNeeded = gaussian(UNKNOWN_SETTLE_TICKS, UNKNOWN_SETTLE_VARIANCE).coerceIn(5, 8)
+        if (unknownStillTicks < unknownTicksNeeded) {
+            status = "Waiting for the scene to load"
+            awaitServerTick()
+            return
+        }
+        log(
+            "Not at War's Retreat, the Raksha lobby or the arena for $unknownStillTicks still ticks at " +
+                "(${position.first}, ${position.second}, ${position.third}) - teleporting to War's Retreat",
+        )
+        resetUnknownLocation()
+        status = "Teleporting to War's Retreat"
+        if (WarsRetreat.teleport()) delayUntil(gaussian(9000L, 1800L)) { WarsRetreat.isHere }
+        else {
+            log("War's Retreat Teleport did not fire - retrying")
+            delay(1800, 600)
+        }
+    }
+
+    private fun resetUnknownLocation() {
+        unknownStillTicks = 0
+        unknownLastTick = -1L
+        unknownLastPosition = null
+        unknownTicksNeeded = 0
     }
 
     private fun trip(order: List<WarsRetreatTask>, loadPreset: Boolean, prayAtAltar: Boolean) = WarsRetreatTrip(
@@ -263,7 +316,10 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
         waitForFullHealth = settings.waitForFullHp && healthPercent < settings.minHealth,
         order = order,
         bankPin = pinOrNull(),
-    )
+    ).apply {
+        advancedMovement = settings.advancedMovement
+        advancedMovementChance = settings.surgeDiveChance
+    }
 
     private suspend fun prebuild() {
         val rotations = fight.rotations
@@ -288,8 +344,8 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
             status = "Summoning Ripper demon"
             log("Summoning Ripper demon")
             if (pouch.click("Summon")) {
-                delayUntil(gaussian(4200L, 900L)) { familiarSummoned }
-                delay(420, 160)
+                delayUntil(gaussian(2600L, 500L), FAST_POLL_MILLIS) { familiarSummoned }
+                delay(150, 60)
             }
             return
         }
@@ -298,8 +354,8 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
         log("Renewing familiar (${familiarTimeSeconds}s left)")
         val pouches = inventory.count(RakshaIds.RIPPER_DEMON_POUCH)
         if (IFSlot(FOLLOWER_DETAILS, FOLLOWER_RENEW).click(1)) {
-            delayUntil(gaussian(3600L, 800L)) { inventory.count(RakshaIds.RIPPER_DEMON_POUCH) < pouches }
-            delay(400, 150)
+            delayUntil(gaussian(3000L, 600L), FAST_POLL_MILLIS) { inventory.count(RakshaIds.RIPPER_DEMON_POUCH) < pouches }
+            delay(150, 60)
         }
     }
 
@@ -315,8 +371,44 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
     }
 
     private fun onRecovered() {
+        applyPendingSettings()
         fight.onDeath()
         lobby.resetTrip()
+    }
+
+    fun onConfigUpdated() {
+        if (!::lobby.isInitialized) return
+        val next = readSettings()
+        val now = next.withTripFieldsOf(settings)
+        if (fight.engaged && now != next) {
+            if (next != pendingSettings) log("Party and Revolution changes apply from the next trip")
+            pendingSettings = next
+            applySettings(now)
+        } else {
+            pendingSettings = null
+            applySettings(next)
+        }
+    }
+
+    private fun applyPendingSettings() {
+        val pending = pendingSettings ?: return
+        pendingSettings = null
+        applySettings(pending)
+        log("Applied the settings saved during the last trip")
+    }
+
+    private fun applySettings(next: RakshaSettings) {
+        settings = next
+        mechanics.settings = next
+        fight.settings = next
+        lobby.settings = next
+        supplies.food = Threshold.percent(next.healthSolid)
+        supplies.jellyfish = Threshold.percent(next.healthJellyfish)
+        supplies.healingPotion = Threshold.percent(next.healthPotion)
+        supplies.excalibur = Threshold.percent(next.healthSpecial)
+        supplies.prayerPotion = Threshold.fixed(next.prayerNormal)
+        supplies.criticalPrayer = Threshold.percent(next.prayerCritical)
+        supplies.elvenShard = Threshold.fixed(next.prayerSpecial)
     }
 
     private fun loadoutPresent(): Boolean {
@@ -378,7 +470,7 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
     )
 
     private fun refreshOverlay() {
-        if (!::fight.isInitialized) return
+        if (!::lobby.isInitialized) return
         val boss = scan.boss
         val review = mechanics.review
         bossLine = if (boss.found && boss.life > 0) "%,d / %,d hp (phase %d)".format(boss.life, review.bossMaxSeen, mechanics.phase) else "-"
@@ -432,11 +524,16 @@ class Raksha : Script(), ConfigurableScript, ConfigVisibilityProvider {
 
     private companion object {
         const val THREAT_RANGE = 60
+        const val UNKNOWN_STAGE = "Unknown location"
+        const val UNKNOWN_SETTLE_TICKS = 6
+        const val UNKNOWN_SETTLE_VARIANCE = 1
+        const val MAX_PRAYER_POINTS = 990
         const val FOLLOWER_DETAILS = 662
         const val FOLLOWER_RENEW = 53
         const val FAMILIAR_SPECIAL_COST = 20
         const val FAMILIAR_SPECIAL_EVERY_TICKS = 8
         const val FAMILIAR_RENEW_BELOW_SECONDS = 300
+        const val FAST_POLL_MILLIS = 30
         const val PREBUILD_TIMEOUT_MS = 180_000L
         const val PREBUILD_TIMEOUT_VARIANCE = 20_000L
     }
